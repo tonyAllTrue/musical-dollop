@@ -23,7 +23,7 @@ coverage.xml
 
 # 🧪 Pentest output
 *.csv
-pentest_results_summary.json
+*summary.json
 
 # 💻 VS Code settings (optional, if you're using it)
 .vscode/

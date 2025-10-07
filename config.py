@@ -2,6 +2,8 @@ import os
 from typing import Dict, List
 from dotenv import load_dotenv
 
+from utils import parse_csv_string
+
 # Load .env file only if running locally
 if os.getenv("CI") != "true":  # GitHub Actions sets CI=true
     load_dotenv()
@@ -18,18 +20,26 @@ if not all([API_URL, API_KEY, CUSTOMER_ID]):
 
 LOG_JWT_THREADS = os.getenv("LOG_JWT_THREADS", "false").lower() == "true"
 
-def _split_csv(name: str) -> List[str]:
-    val = os.getenv(name, "")
-    return [s.strip() for s in val.split(",") if s.strip()]
+# ---------------------------
+# Execution toggles
+# ---------------------------
+ENABLE_LLM_PENTEST = os.getenv("ENABLE_LLM_PENTEST", "true").lower() == "true"
+ENABLE_MODEL_SCANNING = os.getenv("ENABLE_MODEL_SCANNING", "false").lower() == "true"
 
 # ---------------------------
 # Inventory selection
 # ---------------------------
 INVENTORY_SCOPE = os.getenv("INVENTORY_SCOPE", "organization")  # organization|project|resource
 ORGANIZATION_ID = os.getenv("ORGANIZATION_ID") or None
-PROJECT_IDS: List[str] = _split_csv("PROJECT_IDS")
-TARGET_RESOURCE_IDS: List[str] = [s.lower() for s in _split_csv("TARGET_RESOURCE_IDS")]
-TARGET_RESOURCE_NAMES: List[str] = _split_csv("TARGET_RESOURCE_NAMES")
+PROJECT_IDS: List[str] = parse_csv_string(os.getenv("PROJECT_IDS", ""))
+TARGET_RESOURCE_IDS: List[str] = [s.lower() for s in parse_csv_string(os.getenv("TARGET_RESOURCE_IDS", ""))]
+TARGET_RESOURCE_NAMES: List[str] = parse_csv_string(os.getenv("TARGET_RESOURCE_NAMES", ""))
+
+# ---------------------------
+# Model scanning (posture mgmt)
+# ---------------------------
+MODEL_SCAN_POLICIES: List[str] = parse_csv_string(os.getenv("MODEL_SCAN_POLICIES", ""))
+MODEL_SCAN_DESCRIPTION = os.getenv("MODEL_SCAN_DESCRIPTION", "CI Model Scan")
 
 HAS_VALID_PENTEST_CONNECTION_DETAILS = os.getenv("HAS_VALID_PENTEST_CONNECTION_DETAILS", "true").lower() == "true"
 
@@ -54,9 +64,6 @@ POLL_BACKOFF_MAX_SECS  = float(os.getenv("POLL_BACKOFF_MAX_SECS", "60"))
 POLL_NOT_FOUND_GRACE   = int(os.getenv("POLL_NOT_FOUND_GRACE", "3"))
 POLL_STATUS_LOG_EVERY  = int(os.getenv("POLL_STATUS_LOG_EVERY", "6"))
 POLL_TIMEOUT_ACTION    = os.getenv("POLL_TIMEOUT_ACTION", "fail")  # fail|continue|partial
-
-# Allow a one-time alternate job-status poll without X-API-Key after 401/403
-JOB_STATUS_RETRY_WITHOUT_API_KEY = os.getenv("JOB_STATUS_RETRY_WITHOUT_API_KEY", "false").lower() == "true"
 
 # Extended GraphQL polling after HTTP polling timeout (only if last status was RUNNING)
 GRAPHQL_EXTENDED_TIMEOUT_SECS = float(os.getenv("GRAPHQL_EXTENDED_TIMEOUT_SECS", "1800"))
@@ -95,8 +102,9 @@ ON_THRESHOLD_ACTION = os.getenv("ON_THRESHOLD_ACTION", "fail").strip().lower()
 ON_HARD_FAILURES_ACTION = os.getenv("ON_HARD_FAILURES_ACTION", "ignore").strip().lower()
 
 # Optional issue cosmetics
-GITHUB_DEFAULT_LABELS = [s.strip() for s in os.getenv("GITHUB_DEFAULT_LABELS", "pentest").split(",") if s.strip()]
-GITHUB_ASSIGNEES = [s.strip() for s in os.getenv("GITHUB_ASSIGNEES", "").split(",") if s.strip()]
+# ⬇️ default to **no custom labels**; users can set GITHUB_DEFAULT_LABELS in .env
+GITHUB_DEFAULT_LABELS = parse_csv_string(os.getenv("GITHUB_DEFAULT_LABELS", ""))
+GITHUB_ASSIGNEES = parse_csv_string(os.getenv("GITHUB_ASSIGNEES", ""))
 
 # ---------------------------
 # Category severity filtering for per-category GitHub issues
@@ -124,6 +132,14 @@ def print_config_banner() -> None:
     print("=" * 80)
     print(f"API_URL: {API_URL}")
     print(f"CUSTOMER_ID set: {'yes' if CUSTOMER_ID else 'no'}")
+    print(f"ENABLE_LLM_PENTEST: {ENABLE_LLM_PENTEST}")
+    if ENABLE_LLM_PENTEST:
+        print(f"HAS_VALID_PENTEST_CONNECTION_DETAILS: {HAS_VALID_PENTEST_CONNECTION_DETAILS}")
+        print(f"TARGET_TEMPLATE_NAME: {TARGET_TEMPLATE_NAME}")
+    print(f"ENABLE_MODEL_SCANNING: {ENABLE_MODEL_SCANNING}")
+    if ENABLE_MODEL_SCANNING:
+        print(f"MODEL_SCAN_POLICIES: {MODEL_SCAN_POLICIES or '(none)'}")
+        print(f"MODEL_SCAN_DESCRIPTION: {MODEL_SCAN_DESCRIPTION}")
     print(f"INVENTORY_SCOPE: {INVENTORY_SCOPE}")
     if ORGANIZATION_ID:
         print(f"ORGANIZATION_ID: {ORGANIZATION_ID}")
@@ -132,14 +148,11 @@ def print_config_banner() -> None:
     if TARGET_RESOURCE_IDS or TARGET_RESOURCE_NAMES:
         print(f"TARGET_RESOURCE_IDS: {TARGET_RESOURCE_IDS}")
         print(f"TARGET_RESOURCE_NAMES: {TARGET_RESOURCE_NAMES}")
-    print(f"HAS_VALID_PENTEST_CONNECTION_DETAILS: {HAS_VALID_PENTEST_CONNECTION_DETAILS}")
-    print(f"TARGET_TEMPLATE_NAME: {TARGET_TEMPLATE_NAME}")
     print(f"MAX_CONCURRENT_PENTESTS: {MAX_CONCURRENT_PENTESTS}")
     if START_STAGGER_SECS:
         print(f"START_STAGGER_SECS: {START_STAGGER_SECS}")
     print(f"POLL_INTERVAL_SECS: {POLL_INTERVAL_SECS}  POLL_TIMEOUT_SECS: {POLL_TIMEOUT_SECS}")
     print(f"GRAPHQL_EXTENDED_TIMEOUT_SECS: {GRAPHQL_EXTENDED_TIMEOUT_SECS}")
-    print(f"JOB_STATUS_RETRY_WITHOUT_API_KEY: {JOB_STATUS_RETRY_WITHOUT_API_KEY}")
     if FAIL_OUTCOME_AT_OR_ABOVE:
         print(f"FAIL_OUTCOME_AT_OR_ABOVE: {FAIL_OUTCOME_AT_OR_ABOVE}")
     else:

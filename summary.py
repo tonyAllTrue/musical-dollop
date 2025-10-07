@@ -5,7 +5,8 @@ import config
 from github_issues import (
     create_issues_for_threshold_breaches,
     create_issues_for_hard_failures,
-    create_failed_category_issues_for_results,  # per-category via GraphQL
+    create_failed_category_issues_for_results,  
+    create_issues_for_model_scan_failures,      
 )
 
 # Non-failing statuses (pipeline continues)
@@ -17,10 +18,12 @@ ALLOWED_NONFAIL_STATUSES = {
     "EXTENDED_POLL_TIMEOUT",
 }
 
+
 def _severity_idx(level: str | None) -> int | None:
     if level is None:
         return None
     return config.SEVERITY_INDEX.get(config.normalize_outcome(level))
+
 
 def _worse(a: str | None, b: str | None) -> str | None:
     """Return the worse (more severe) of two outcome levels using severity order.
@@ -32,6 +35,7 @@ def _worse(a: str | None, b: str | None) -> str | None:
     if ib is None:  # b unknown
         return a
     return a if ia < ib else b
+
 
 def finalize_and_exit(all_results: List[Dict[str, Any]]) -> int:
     # Summaries
@@ -138,9 +142,7 @@ def finalize_and_exit(all_results: List[Dict[str, Any]]) -> int:
                 print(f"📝 Created {created_hf} GitHub issue(s) for hard failures.")
 
         # Fail if action demands failure
-        should_fail_hard = (
-            (config.ON_HARD_FAILURES_ACTION in ("fail", "both"))
-        )
+        should_fail_hard = (config.ON_HARD_FAILURES_ACTION in ("fail", "both"))
         if should_fail_hard:
             print(f"❌ {len(hard_failures)} hard failure(s). Failing (ON_HARD_FAILURES_ACTION={config.ON_HARD_FAILURES_ACTION}).")
             exit_code = 1
@@ -152,5 +154,110 @@ def finalize_and_exit(all_results: List[Dict[str, Any]]) -> int:
     with open(results_filename, "w") as f:
         json.dump(all_results, f, indent=2, default=str)
     print(f"\n[+] Detailed results saved to {results_filename}")
+
+    return exit_code
+
+
+def finalize_model_scan(results: List[Dict[str, Any]]) -> int:
+    import json as _json
+
+    total  = len(results)
+    passed = sum(1 for r in results if r.get("status") == "PASSED")
+    failed = [r for r in results if r.get("status") == "FAILED"]
+    errors = [r for r in results if r.get("status") == "ERROR"]
+
+    print(f"\n{'='*80}")
+    print("MODEL SCAN SUMMARY")
+    print(f"{'='*80}")
+    print(f"Total scanned: {total}")
+    print(f"Passed: {passed}")
+    print(f"Failed: {len(failed)}")
+    print(f"Errors: {len(errors)}")
+
+    with open("model_scan_results_summary.json", "w") as f:
+        _json.dump(results, f, indent=2, default=str)
+    print("[+] Detailed model-scan results saved to model_scan_results_summary.json")
+
+    # -------- Helpers --------
+
+    def _get_outcome(r: dict) -> str | None:
+        out = config.normalize_outcome(r.get("outcome"))
+        if out:
+            return out
+        try:
+            return config.normalize_outcome(
+                r.get("raw_return_value", {})
+                 .get("graphql", {})
+                 .get("modelScanExecution", {})
+                 .get("outcomeLevel")
+            )
+        except Exception:
+            return None
+
+    exit_code = 0
+
+    # Treat any non-ERROR result as having a "known/unknown" outcome that we can compare if present
+    results_with_outcomes = [r for r in results if _get_outcome(r) is not None]
+    worst_known_outcome: str | None = None
+    unknown_outcomes = sum(1 for r in results if _get_outcome(r) is None)
+
+    if results_with_outcomes:
+        print("\nOutcome Summary:")
+        for r in results:
+            raw = r.get("outcome") or _get_outcome(r)
+            outcome = config.normalize_outcome(raw) or "Unknown"
+            print(f"  {'✓' if r.get('status') == 'PASSED' else ('✗' if r.get('status') == 'FAILED' else '•')} {r.get('resource_name')}: {raw or 'Unknown'}")
+            if outcome != "Unknown":
+                worst_known_outcome = _worse(worst_known_outcome, outcome)
+
+    print(f"\nUnknown outcomes (non-blocking): {unknown_outcomes}")
+    print(f"\nWorst known outcome across all resources: {worst_known_outcome or 'None'}")
+
+    # Threshold handling (parity with LLM finalize_and_exit)
+    threshold = config.normalize_outcome(config.FAIL_OUTCOME_AT_OR_ABOVE) if getattr(config, "FAIL_OUTCOME_AT_OR_ABOVE", None) else ""
+    breaches: List[Dict[str, Any]] = []
+    if threshold:
+        t_idx = config.SEVERITY_INDEX.get(threshold)
+        if t_idx is not None:
+            for r in results_with_outcomes:
+                out = _get_outcome(r)
+                if out is not None and config.SEVERITY_INDEX.get(out, 999) <= t_idx:
+                    breaches.append(r)
+
+        # Create GH issues for threshold breaches if configured (same as LLM)
+        if breaches and config.ON_THRESHOLD_ACTION in ("issue", "both"):
+            created_tb = create_issues_for_threshold_breaches(breaches, threshold, prefix_tag="[Model Scan]")
+            if created_tb:
+                print(f"📝 Created {created_tb} GitHub issue(s) for outcome threshold breaches.")
+
+        # Decide pass/fail based on ON_THRESHOLD_ACTION (same as LLM)
+        if breaches:
+            if config.ON_THRESHOLD_ACTION in ("fail", "both"):
+                print(f"❌ {len(breaches)} resource(s) breached threshold {threshold.capitalize()}. Failing.")
+                exit_code = 1
+            else:
+                print(f"ℹ️ {len(breaches)} resource(s) breached threshold {threshold.capitalize()}, but ON_THRESHOLD_ACTION={config.ON_THRESHOLD_ACTION}; not failing.")
+        else:
+            w_idx = _severity_idx(worst_known_outcome) if worst_known_outcome is not None else None
+            if w_idx is None:
+                print(f"✅ No known outcomes to compare to threshold '{threshold.capitalize()}'; passing.")
+            else:
+                print(f"✅ Worst known outcome {worst_known_outcome.capitalize()} is below threshold {threshold.capitalize()}. Passing.")
+    else:
+        print("✅ No outcome threshold set; passing regardless of outcomes.")
+
+    # Hard failure actions (treat ERRORs as hard failures, like LLM)
+    hard_failures = errors
+    if hard_failures:
+        if config.ON_HARD_FAILURES_ACTION in ("issue", "both"):
+            created_hf = create_issues_for_model_scan_failures(hard_failures)
+            if created_hf:
+                print(f"📝 Created {created_hf} GitHub issue(s) for hard failures.")
+
+        if config.ON_HARD_FAILURES_ACTION in ("fail", "both"):
+            print(f"❌ {len(hard_failures)} hard failure(s). Failing (ON_HARD_FAILURES_ACTION={config.ON_HARD_FAILURES_ACTION}).")
+            exit_code = 1
+        else:
+            print(f"ℹ️ {len(hard_failures)} hard failure(s), ON_HARD_FAILURES_ACTION={config.ON_HARD_FAILURES_ACTION}; not failing pipeline.")
 
     return exit_code
