@@ -5,8 +5,9 @@ import config
 from github_issues import (
     create_issues_for_threshold_breaches,
     create_issues_for_hard_failures,
-    create_failed_category_issues_for_results,  
-    create_issues_for_model_scan_failures,      
+    create_failed_category_issues_for_results,
+    create_issues_for_model_scan_failures,
+    create_issues_for_model_scan_violations   
 )
 
 # Non-failing statuses (pipeline continues)
@@ -229,6 +230,11 @@ def finalize_model_scan(results: List[Dict[str, Any]]) -> int:
             created_tb = create_issues_for_threshold_breaches(breaches, threshold, prefix_tag="[Model Scan]")
             if created_tb:
                 print(f"📝 Created {created_tb} GitHub issue(s) for outcome threshold breaches.")
+            # create GH issues for per-policy violations (mirrors LLM per-category issues)
+            created_ms = create_issues_for_model_scan_violations(breaches)
+            if created_ms:
+                print(f"📝 Created {created_ms} GitHub issue(s) for model-scan policy violations.")
+
 
         # Decide pass/fail based on ON_THRESHOLD_ACTION (same as LLM)
         if breaches:

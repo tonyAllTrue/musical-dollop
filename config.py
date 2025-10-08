@@ -57,17 +57,17 @@ MAX_START_RETRIES = int(os.getenv("MAX_START_RETRIES", "3"))
 START_RETRY_DELAY = float(os.getenv("START_RETRY_DELAY", "30"))
 
 # Polling behavior
-POLL_INTERVAL_SECS = float(os.getenv("POLL_INTERVAL_SECS", "10"))
+POLL_INTERVAL_SECS = 60.0  # Poll every 60 seconds
 POLL_TIMEOUT_SECS = float(os.getenv("POLL_TIMEOUT_SECS", "4200"))  # 70 minutes
-POLL_BACKOFF_BASE_SECS = float(os.getenv("POLL_BACKOFF_BASE_SECS", "2"))
-POLL_BACKOFF_MAX_SECS  = float(os.getenv("POLL_BACKOFF_MAX_SECS", "60"))
-POLL_NOT_FOUND_GRACE   = int(os.getenv("POLL_NOT_FOUND_GRACE", "3"))
-POLL_STATUS_LOG_EVERY  = int(os.getenv("POLL_STATUS_LOG_EVERY", "6"))
+POLL_BACKOFF_BASE_SECS = 5.0 # Base backoff delay between polls
+POLL_BACKOFF_MAX_SECS = 300.0 # Max backoff delay between polls
+POLL_NOT_FOUND_GRACE = 3  # Number of "not found" responses to ignore before failing
+POLL_STATUS_LOG_EVERY = 10  # Log every 10 polls (10 minutes)
 POLL_TIMEOUT_ACTION    = os.getenv("POLL_TIMEOUT_ACTION", "fail")  # fail|continue|partial
 
 # Extended GraphQL polling after HTTP polling timeout (only if last status was RUNNING)
 GRAPHQL_EXTENDED_TIMEOUT_SECS = float(os.getenv("GRAPHQL_EXTENDED_TIMEOUT_SECS", "1800"))
-GRAPHQL_POLL_INTERVAL_SECS    = float(os.getenv("GRAPHQL_POLL_INTERVAL_SECS", "120"))
+GRAPHQL_POLL_INTERVAL_SECS = 120.0  # Poll every 2 minutes in extended mode
 
 # ---------------------------
 # Outcome thresholding

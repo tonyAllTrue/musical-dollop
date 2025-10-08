@@ -8,10 +8,11 @@
 from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import api
 import config
+from inventory import select_with_scope
 
 
 # ---------------------------
@@ -26,73 +27,21 @@ def _resource_name(r: dict) -> str:
         or "Unnamed"
     )
 
-def select_models_and_assets(jwt: str) -> tuple[List[str], Dict[str, str]]:
+
+def select_models_and_assets(jwt: str) -> Tuple[List[str], Dict[str, str]]:
     """
     Mirrors LLM endpoint selection but for models / model_assets.
     Excludes "Model Card File" via api.is_pentestable_model_asset.
     Returns (selected_ids, id->name mapping).
     """
-    scope = config.INVENTORY_SCOPE
-    print(f"\n[model] Inventory selection scope: {scope}")
-
-    found: List[dict] = []
-    if scope == "organization":
-        print("[model] Fetching models & assets for organization scope…")
-        found = api.list_models_and_assets(jwt_token=jwt, organization_id=config.ORGANIZATION_ID or None)
-    elif scope == "project":
-        if not config.PROJECT_IDS:
-            print("❌ INVENTORY_SCOPE=project but PROJECT_IDS is empty.")
-            return [], {}
-        print(f"[model] Fetching models & assets for projects: {config.PROJECT_IDS}")
-        batch: List[dict] = []
-        for pid in config.PROJECT_IDS:
-            res = api.list_models_and_assets(jwt_token=jwt, project_id=pid)
-            print(f"    - Project {pid}: {len(res)} model/model_asset resources")
-            batch.extend(res)
-        found = api.dedupe_resources(batch)
-    elif scope == "resource":
-        print("[model] Fetching models & assets for resource scope (will filter by IDs/names)…")
-        candidates = api.list_models_and_assets(jwt_token=jwt)
-
-        by_id = set(r.lower() for r in config.TARGET_RESOURCE_IDS)
-        by_name = [s.lower() for s in config.TARGET_RESOURCE_NAMES]
-        if not by_id and not by_name:
-            print("❌ INVENTORY_SCOPE=resource but no TARGET_RESOURCE_IDS or TARGET_RESOURCE_NAMES provided.")
-            return [], {}
-
-        def name_match(display: str) -> bool:
-            dl = (display or "").lower()
-            return any(substr in dl for substr in by_name)
-
-        filtered: list[dict] = []
-        for r in candidates:
-            rid = (r.get("resource_instance_id") or "").lower()
-            rname = r.get("resource_display_name") or ""
-            if (by_id and rid in by_id) or (by_name and name_match(rname)):
-                filtered.append(r)
-
-        print(f"[model] Resource scope: matched {len(filtered)} of {len(candidates)} candidates")
-        found = api.dedupe_resources(filtered)
-    else:
-        print(f"❌ Unknown INVENTORY_SCOPE='{scope}'. Use organization|project|resource.")
-        return [], {}
-
-    print(f"[+] Found {len(found)} model/model_asset resources (pre-filter)")
-    pentestable = [r for r in found if api.is_pentestable_model_asset(r)]
-    excluded = len(found) - len(pentestable)
-    if excluded:
-        print(f"[i] Excluding {excluded} 'Model Card File' resource(s) from scans")
-
-    print(f"[+] Total selected model/model_asset resources: {len(pentestable)}")
-
-    mapping: Dict[str, str] = {}
-    for r in pentestable:
-        rid = r["resource_instance_id"]
-        mapping[rid] = _resource_name(r)
-        print(f"    - {mapping[rid]}\n      ID: {rid}\n")
-
-    selected_ids = list(mapping.keys())
-    return selected_ids, mapping
+    return select_with_scope(
+        jwt=jwt,
+        entity_label="model/model_asset resources",
+        list_fn=api.list_models_and_assets,          # kwargs: jwt_token, organization_id?, project_id?
+        dedupe_fn=api.dedupe_resources,
+        include_predicate=api.is_pentestable_model_asset,  # exclude non-pentestable assets
+        name_getter=_resource_name,
+    )
 
 
 # ---------------------------
@@ -103,6 +52,7 @@ def _fail_threshold() -> str:
     env = (config.FAIL_OUTCOME_AT_OR_ABOVE or "").strip().lower()
     return env if env else "moderate"
 
+
 def _fails_from_outcome(outcome_level: str | None) -> bool:
     norm = config.normalize_outcome(outcome_level)
     if not norm:
@@ -112,13 +62,17 @@ def _fails_from_outcome(outcome_level: str | None) -> bool:
     i_thr = config.SEVERITY_INDEX.get(thr)
     return (i_norm is not None and i_thr is not None and i_norm <= i_thr)
 
+
 def _violations_from_gql_per_policy(per_policy: List[dict]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for row in per_policy or []:
         failed = int(row.get("failedTestCases") or 0)
         passed = int(row.get("passedTestCases") or 0)
-        total  = failed + passed if (row.get("failedTestCases") is not None and row.get("passedTestCases") is not None) \
-                 else int(row.get("totalTestCases") or (failed + passed))
+        total = (
+            failed + passed
+            if (row.get("failedTestCases") is not None and row.get("passedTestCases") is not None)
+            else int(row.get("totalTestCases") or (failed + passed))
+        )
         if failed <= 0:
             continue
 
@@ -138,30 +92,37 @@ def _violations_from_gql_per_policy(per_policy: List[dict]) -> List[Dict[str, An
             vuln = ex.get("modelVulnerability")
             desc = ex.get("modelVulnerabilityDescription")
             parts = []
-            if title: parts.append(f"### {title}")
-            if finding: parts.append(finding)
+            if title:
+                parts.append(f"### {title}")
+            if finding:
+                parts.append(finding)
             if vuln or desc:
                 parts.append("\n**Vulnerability:** " + " — ".join([p for p in [vuln, desc] if p]))
-            if impact: parts.append("\n**Impact:**\n" + impact)
-            if remediation: parts.append("\n**Remediation:**\n" + remediation)
-            if background: parts.append("\n**Background:**\n" + background)
+            if impact:
+                parts.append("\n**Impact:**\n" + impact)
+            if remediation:
+                parts.append("\n**Remediation:**\n" + remediation)
+            if background:
+                parts.append("\n**Background:**\n" + background)
             detail_blocks.append("\n".join(parts).strip())
 
         examples_total = len(examples)
         examples_shown = min(5, examples_total)
 
-        out.append({
-            "policy": policy,
-            "status": "UNRESOLVED",
-            "severity": severity,
-            "details": "\n\n".join([b for b in detail_blocks if b]).strip(),
-            "detail_blocks": detail_blocks,
-            "examples_total": examples_total,
-            "examples_shown": examples_shown,
-            "failed": failed,
-            "passed": passed,
-            "total": total if total else (failed + passed),
-        })
+        out.append(
+            {
+                "policy": policy,
+                "status": "UNRESOLVED",
+                "severity": severity,
+                "details": "\n\n".join([b for b in detail_blocks if b]).strip(),
+                "detail_blocks": detail_blocks,
+                "examples_total": examples_total,
+                "examples_shown": examples_shown,
+                "failed": failed,
+                "passed": passed,
+                "total": total if total else (failed + passed),
+            }
+        )
     return out
 
 
