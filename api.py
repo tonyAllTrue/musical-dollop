@@ -410,8 +410,7 @@ def model_scan_check_policies(
 
 def query_model_scan_execution_full(jwt_token: str, model_scan_execution_id: str) -> dict:
     """
-    Fetch execution outcome, resource, per-policy results, and overall stats
-    for a given model scan execution (GraphQL).
+    Fetch execution outcome, resource, per-policy results for a given model scan execution.
     """
     graphql_query = """
     query ModelScanExecutionResults($customerId: UUID!, $modelScanExecutionId: UUID!) {
@@ -443,11 +442,6 @@ def query_model_scan_execution_full(jwt_token: str, model_scan_execution_id: str
             title
           }
         }
-      }
-      modelScanOverallResults(filter: { customerId: $customerId, modelScanExecutionId: $modelScanExecutionId }) {
-        passedTestCases
-        failedTestCases
-        totalTestCases
       }
     }
     """.strip()
