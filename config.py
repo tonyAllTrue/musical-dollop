@@ -18,7 +18,7 @@ CUSTOMER_ID = os.getenv("CUSTOMER_ID", "")
 if not all([API_URL, API_KEY, CUSTOMER_ID]):
     raise ValueError("Missing one or more required endpoint environment variables.")
 
-LOG_JWT_THREADS = os.getenv("LOG_JWT_THREADS", "false").lower() == "true"
+LOG_JWT_THREADS = True
 
 # ---------------------------
 # Execution toggles
