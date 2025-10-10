@@ -41,7 +41,7 @@ TARGET_RESOURCE_NAMES: List[str] = parse_csv_string(os.getenv("TARGET_RESOURCE_N
 MODEL_SCAN_POLICIES: List[str] = parse_csv_string(os.getenv("MODEL_SCAN_POLICIES", ""))
 MODEL_SCAN_DESCRIPTION = os.getenv("MODEL_SCAN_DESCRIPTION", "CI Model Scan")
 
-HAS_VALID_PENTEST_CONNECTION_DETAILS = os.getenv("HAS_VALID_PENTEST_CONNECTION_DETAILS", "true").lower() == "true"
+HAS_VALID_PENTEST_CONNECTION_DETAILS = True
 
 # ---------------------------
 # Pentest run parameters
