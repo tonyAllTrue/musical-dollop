@@ -38,7 +38,7 @@ TARGET_RESOURCE_NAMES: List[str] = parse_csv_string(os.getenv("TARGET_RESOURCE_N
 # ---------------------------
 # Model scanning (posture mgmt)
 # ---------------------------
-MODEL_SCAN_POLICIES: List[str] = parse_csv_string(os.getenv("MODEL_SCAN_POLICIES", ""))
+MODEL_SCAN_POLICIES: List[str] = parse_csv_string(os.getenv("MODEL_SCAN_POLICIES", "model-scan-code-execution-prohibited,model-scan-input-output-operations-prohibited,model-scan-network-access-prohibited,model-scan-malware-signatures-prohibited"))
 MODEL_SCAN_DESCRIPTION = os.getenv("MODEL_SCAN_DESCRIPTION", "CI Model Scan")
 
 HAS_VALID_PENTEST_CONNECTION_DETAILS = True
