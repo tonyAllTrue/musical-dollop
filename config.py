@@ -46,7 +46,7 @@ HAS_VALID_PENTEST_CONNECTION_DETAILS = True
 # ---------------------------
 # Pentest run parameters
 # ---------------------------
-TARGET_TEMPLATE_NAME = os.getenv("TARGET_TEMPLATE_NAME", "Default LLM Pentest")
+TARGET_TEMPLATE_NAME = os.getenv("TARGET_TEMPLATE_NAME", "Prompt Injection")
 MAX_CONCURRENT_PENTESTS = int(os.getenv("MAX_CONCURRENT_PENTESTS", "5"))
 
 # Optional stagger between start requests (seconds)
