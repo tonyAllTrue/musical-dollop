@@ -51,6 +51,211 @@ def make_api_request(
     return resp
 
 
+# ---------- Organization & Project Lookup ----------
+
+# Cache for the org/project data to avoid repeated API calls
+_org_project_cache: Optional[Dict[str, Any]] = None
+_cache_lock = threading.Lock()
+
+
+def _fetch_organizations_and_projects(jwt_token: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """
+    Fetch all organizations and their projects for the customer.
+    Results are cached to avoid repeated API calls.
+    
+    Returns list of organization dicts, each containing:
+    - organization_id
+    - organization_name
+    - projects: list of project dicts with project_id and project_name
+    
+    Raises exception on permission errors to allow caller to handle appropriately.
+    """
+    global _org_project_cache
+    
+    with _cache_lock:
+        # Return cached data if available and not forcing refresh
+        if _org_project_cache is not None and not force_refresh:
+            return _org_project_cache
+        
+        endpoint = f"/v1/admin/customers/{config.CUSTOMER_ID}/organizations/projects"
+        params = {
+            "organization_status": "active",
+            "project_status": "active"
+        }
+        
+        try:
+            resp = make_api_request(endpoint, token=jwt_token, method="GET", params=params, timeout=30)
+            data = resp.json()
+            orgs = data.get("organizations", [])
+            
+            # Cache the result
+            _org_project_cache = orgs
+            return orgs
+        except requests.HTTPError as e:
+            # Re-raise permission errors so caller can provide better context
+            if e.response.status_code in (401, 403):
+                raise
+            print(f"[-] Error fetching organizations and projects: {e}")
+            return []
+        except Exception as e:
+            print(f"[-] Error fetching organizations and projects: {e}")
+            return []
+
+
+def list_organizations(jwt_token: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all organizations for the customer.
+    Returns list of organization dicts with 'organization_id' and 'organization_name'.
+    
+    Note: This uses a cached fetch of the organizations/projects endpoint.
+    """
+    orgs_with_projects = _fetch_organizations_and_projects(jwt_token)
+    
+    # Return simplified view (just org info, no projects)
+    return [
+        {
+            "organization_id": org.get("organization_id"),
+            "organization_name": org.get("organization_name"),
+        }
+        for org in orgs_with_projects
+    ]
+
+
+def resolve_organization_name_to_id(jwt_token: str, org_name: str) -> Optional[str]:
+    """
+    Look up an organization by name and return its ID.
+    Returns None if not found.
+    
+    Note: This uses a cached fetch of the organizations/projects endpoint.
+    """
+    orgs = _fetch_organizations_and_projects(jwt_token)
+    org_name_lower = org_name.strip().lower()
+    
+    for org in orgs:
+        if org.get("organization_name", "").strip().lower() == org_name_lower:
+            return org.get("organization_id")
+    
+    return None
+
+
+def list_projects_for_organization(jwt_token: str, organization_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all projects for a specific organization.
+    Returns list of project dicts with 'project_id' and 'project_name'.
+    
+    Note: This uses a cached fetch of the organizations/projects endpoint.
+    """
+    orgs = _fetch_organizations_and_projects(jwt_token)
+    
+    # Find the matching organization and return its projects
+    for org in orgs:
+        if org.get("organization_id") == organization_id:
+            return org.get("projects", [])
+    
+    return []
+
+
+def resolve_project_name_to_id(jwt_token: str, project_name: str, organization_id: Optional[str] = None) -> Optional[str]:
+    """
+    Look up a project by name and return its ID.
+    If organization_id is provided, only search within that organization.
+    Returns None if not found.
+    
+    Note: This uses a cached fetch of the organizations/projects endpoint.
+    """
+    orgs = _fetch_organizations_and_projects(jwt_token)
+    project_name_lower = project_name.strip().lower()
+    
+    if organization_id:
+        # Search within specific organization
+        for org in orgs:
+            if org.get("organization_id") == organization_id:
+                for project in org.get("projects", []):
+                    if project.get("project_name", "").strip().lower() == project_name_lower:
+                        return project.get("project_id")
+    else:
+        # Search across all organizations
+        for org in orgs:
+            for project in org.get("projects", []):
+                if project.get("project_name", "").strip().lower() == project_name_lower:
+                    return project.get("project_id")
+    
+    return None
+
+
+def resolve_organization_names_or_ids(jwt_token: str, values: List[str]) -> List[str]:
+    """
+    Resolve a list of organization names or IDs to IDs.
+    If a value is already a valid UUID, it's kept as-is.
+    If it's a name, it's resolved to an ID.
+    Returns list of organization IDs.
+    """
+    import uuid
+    
+    resolved_ids = []
+    for value in values:
+        value = value.strip()
+        if not value:
+            continue
+            
+        # Check if it's already a UUID
+        try:
+            uuid.UUID(value)
+            resolved_ids.append(value)
+            print(f"[org-resolve] '{value}' is a valid UUID, using as-is")
+            continue
+        except ValueError:
+            pass
+        
+        # Try to resolve as name
+        org_id = resolve_organization_name_to_id(jwt_token, value)
+        if org_id:
+            resolved_ids.append(org_id)
+            print(f"[org-resolve] Resolved organization name '{value}' → {org_id}")
+        else:
+            print(f"[org-resolve] ⚠️  Could not resolve organization '{value}' (not found or invalid)")
+    
+    return resolved_ids
+
+
+def resolve_project_names_or_ids(jwt_token: str, values: List[str], organization_id: Optional[str] = None) -> List[str]:
+    """
+    Resolve a list of project names or IDs to IDs.
+    If a value is already a valid UUID, it's kept as-is.
+    If it's a name, it's resolved to an ID.
+    If organization_id is provided, searches within that org only.
+    Returns list of project IDs.
+    """
+    import uuid
+    
+    resolved_ids = []
+    for value in values:
+        value = value.strip()
+        if not value:
+            continue
+            
+        # Check if it's already a UUID
+        try:
+            uuid.UUID(value)
+            resolved_ids.append(value)
+            print(f"[proj-resolve] '{value}' is a valid UUID, using as-is")
+            continue
+        except ValueError:
+            pass
+        
+        # Try to resolve as name
+        project_id = resolve_project_name_to_id(jwt_token, value, organization_id)
+        if project_id:
+            resolved_ids.append(project_id)
+            org_context = f" (within org {organization_id})" if organization_id else ""
+            print(f"[proj-resolve] Resolved project name '{value}'{org_context} → {project_id}")
+        else:
+            org_context = f" within organization {organization_id}" if organization_id else ""
+            print(f"[proj-resolve] ⚠️  Could not resolve project '{value}'{org_context} (not found or invalid)")
+    
+    return resolved_ids
+
+
 # ---------- Shared utilities ----------
 
 def sanitize_name(name: str) -> str:
@@ -309,7 +514,7 @@ def list_llm_endpoints(
     project_id: str | None = None,
     valid_only: bool = True,
 ) -> list[dict]:
-    """Back-compat wrapper: returns llm_endpoint resources."""
+    """returns llm_endpoint resources."""
     return list_resources(
         jwt_token,
         categories=["llm_endpoint"],
@@ -327,7 +532,7 @@ def list_models_and_assets(
     categories: List[str] | None = None,  # e.g. ["model","model_assets"]
     omit_not_ai: bool = True,
 ) -> list[dict]:
-    """Back-compat wrapper: returns model + model_assets resources (or a custom subset)."""
+    """returns model + model_assets resources (or a custom subset)."""
     return list_resources(
         jwt_token,
         categories=categories or ["model", "model_assets"],
@@ -495,7 +700,7 @@ query PentestScanSummariesModelScans($customerId: UUID!, $organizationId: UUID) 
 
 def query_model_scan_details(jwt_token: str, model_scan_execution_id: str) -> dict:
     """
-    /v1/graphql: modelScanDetails — returns startAt, resource, issues, etc.
+    /v1/graphql: modelScanDetails – returns startAt, resource, issues, etc.
     """
     query = """
     query ModelScanDetails($customerId: UUID!, $scanId: UUID!) {

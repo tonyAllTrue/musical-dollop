@@ -30,8 +30,16 @@ ENABLE_MODEL_SCANNING = os.getenv("ENABLE_MODEL_SCANNING", "false").lower() == "
 # Inventory selection
 # ---------------------------
 INVENTORY_SCOPE = os.getenv("INVENTORY_SCOPE", "organization")  # organization|project|resource
+
+# Organization - can be ID or name (will be resolved)
 ORGANIZATION_ID = os.getenv("ORGANIZATION_ID") or None
+ORGANIZATION_NAME = os.getenv("ORGANIZATION_NAME") or None
+
+# Projects - can be IDs or names (will be resolved)
 PROJECT_IDS: List[str] = parse_csv_string(os.getenv("PROJECT_IDS", ""))
+PROJECT_NAMES: List[str] = parse_csv_string(os.getenv("PROJECT_NAMES", ""))
+
+# Resources
 TARGET_RESOURCE_IDS: List[str] = [s.lower() for s in parse_csv_string(os.getenv("TARGET_RESOURCE_IDS", ""))]
 TARGET_RESOURCE_NAMES: List[str] = parse_csv_string(os.getenv("TARGET_RESOURCE_NAMES", ""))
 
@@ -143,8 +151,12 @@ def print_config_banner() -> None:
     print(f"INVENTORY_SCOPE: {INVENTORY_SCOPE}")
     if ORGANIZATION_ID:
         print(f"ORGANIZATION_ID: {ORGANIZATION_ID}")
+    if ORGANIZATION_NAME:
+        print(f"ORGANIZATION_NAME: {ORGANIZATION_NAME}")
     if PROJECT_IDS:
         print(f"PROJECT_IDS: {PROJECT_IDS}")
+    if PROJECT_NAMES:
+        print(f"PROJECT_NAMES: {PROJECT_NAMES}")
     if TARGET_RESOURCE_IDS or TARGET_RESOURCE_NAMES:
         print(f"TARGET_RESOURCE_IDS: {TARGET_RESOURCE_IDS}")
         print(f"TARGET_RESOURCE_NAMES: {TARGET_RESOURCE_NAMES}")
