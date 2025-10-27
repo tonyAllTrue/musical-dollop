@@ -57,6 +57,38 @@ HAS_VALID_PENTEST_CONNECTION_DETAILS = True
 TARGET_TEMPLATE_NAME = os.getenv("TARGET_TEMPLATE_NAME", "Prompt Injection")
 MAX_CONCURRENT_PENTESTS = int(os.getenv("MAX_CONCURRENT_PENTESTS", "5"))
 
+# Pentest connection details - Model mapping by resource type
+# Format: "ResourceType1:model1,ResourceType2:model2"
+# Example: "OpenAIEndpoint:gpt-4,AnthropicEndpoint:claude-3-5-sonnet-latest"
+PENTEST_MODEL_MAPPING_STR = os.getenv("PENTEST_MODEL_MAPPING", "")
+
+def parse_model_mapping(mapping_str: str) -> Dict[str, str]:
+    """
+    Parse model mapping string into dict.
+    Format: "ResourceType1:model1,ResourceType2:model2"
+    Returns: {"ResourceType1": "model1", "ResourceType2": "model2"}
+    """
+    if not mapping_str:
+        return {}
+    
+    mapping = {}
+    for pair in mapping_str.split(","):
+        pair = pair.strip()
+        if ":" not in pair:
+            continue
+        resource_type, model = pair.split(":", 1)
+        mapping[resource_type.strip()] = model.strip()
+    
+    return mapping
+
+PENTEST_MODEL_MAPPING: Dict[str, str] = parse_model_mapping(PENTEST_MODEL_MAPPING_STR)
+
+PENTEST_SYSTEM_PROMPT_ENABLED = os.getenv("PENTEST_SYSTEM_PROMPT_ENABLED", "false").lower() == "true"
+PENTEST_APPLY_GUARDRAILS = os.getenv("PENTEST_APPLY_GUARDRAILS", "false").lower() == "true"
+
+# Optional: custom system prompt text
+PENTEST_SYSTEM_PROMPT_TEXT = os.getenv("PENTEST_SYSTEM_PROMPT_TEXT", "")
+
 # Optional stagger between start requests (seconds)
 START_STAGGER_SECS = float(os.getenv("START_STAGGER_SECS", "0"))
 
@@ -144,6 +176,14 @@ def print_config_banner() -> None:
     if ENABLE_LLM_PENTEST:
         print(f"HAS_VALID_PENTEST_CONNECTION_DETAILS: {HAS_VALID_PENTEST_CONNECTION_DETAILS}")
         print(f"TARGET_TEMPLATE_NAME: {TARGET_TEMPLATE_NAME}")
+        if PENTEST_MODEL_MAPPING:
+            print(f"PENTEST_MODEL_MAPPING:")
+            for resource_type, model in PENTEST_MODEL_MAPPING.items():
+                print(f"  - {resource_type}: {model}")
+        print(f"PENTEST_SYSTEM_PROMPT_ENABLED: {PENTEST_SYSTEM_PROMPT_ENABLED}")
+        print(f"PENTEST_APPLY_GUARDRAILS: {PENTEST_APPLY_GUARDRAILS}")
+        if PENTEST_SYSTEM_PROMPT_TEXT:
+            print(f"PENTEST_SYSTEM_PROMPT_TEXT: {PENTEST_SYSTEM_PROMPT_TEXT[:100]}...")
     print(f"ENABLE_MODEL_SCANNING: {ENABLE_MODEL_SCANNING}")
     if ENABLE_MODEL_SCANNING:
         print(f"MODEL_SCAN_POLICIES: {MODEL_SCAN_POLICIES or '(none)'}")

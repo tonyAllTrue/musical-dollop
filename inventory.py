@@ -2,7 +2,7 @@
 # Parameterized by list/dedupe functions and simple getter/predicate hooks.
 
 from __future__ import annotations
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 import sys
 import config
 import api
@@ -251,14 +251,15 @@ def select_with_scope(
     *,
     jwt: str,
     entity_label: str,
-    list_fn: ListFn,                                # expects kwargs: jwt_token, organization_id, project_id, (valid_only?) depending on API
+    list_fn: ListFn,
     dedupe_fn: Optional[DedupeFn] = None,
     id_getter: Getter = _default_id_getter,
     name_getter: Getter = _default_name_getter,
-    include_predicate: Optional[Predicate] = None,   # e.g., api.is_pentestable_model_asset
-    valid_predicate: Optional[Predicate] = None,     # e.g., lambda r: r.get("has_valid_pentest_connection_details", False)
-    pass_valid_only_to_api: bool = False,            # pass valid_only to list_fn when supported
-) -> Tuple[List[str], Dict[str, str]]:
+    include_predicate: Optional[Predicate] = None,
+    valid_predicate: Optional[Predicate] = None,
+    pass_valid_only_to_api: bool = False,
+    return_full_resources: bool = False,  # NEW parameter
+) -> Union[Tuple[List[str], Dict[str, str]], Tuple[List[str], Dict[str, str], List[dict]]]:
     """
     Generic org/project/resource selection based on config:
       - INVENTORY_SCOPE: organization|project|resource
@@ -267,7 +268,10 @@ def select_with_scope(
       - include_predicate (domain-specific inclusion filter)
       - valid_predicate (optional gating when HAS_VALID_PENTEST_CONNECTION_DETAILS=true)
     Returns:
-      - selected_ids, {id -> name}
+      If return_full_resources=False (default):
+        - selected_ids, {id -> name}
+      If return_full_resources=True:
+        - selected_ids, {id -> name}, [full_resource_dicts]
     """
     # First, resolve any organization/project names to IDs
     resolved_org_id, resolved_project_ids = resolve_config_org_and_projects(jwt)
@@ -357,4 +361,8 @@ def select_with_scope(
 
     selected_ids = list(mapping.keys())
     print(f"[+] Total selected {entity_label}: {len(selected_ids)}")
-    return selected_ids, mapping
+    
+    if return_full_resources:
+        return selected_ids, mapping, chosen
+    else:
+        return selected_ids, mapping

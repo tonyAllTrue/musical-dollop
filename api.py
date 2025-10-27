@@ -470,6 +470,20 @@ def build_scope_filters(
     return params
 
 
+def get_llm_pentest_models(jwt_token: str, resource_instance_id: str) -> List[str]:
+    """
+    Fetch available models for a specific LLM endpoint resource.
+    Returns list of model names that can be used for pentesting this resource.
+    """
+    endpoint = f"/v2/llm-pentest/customer/{config.CUSTOMER_ID}/llm-pentest-models/{resource_instance_id}"
+    try:
+        resp = make_api_request(endpoint, token=jwt_token, method="GET", timeout=30)
+        models = resp.json()
+        return models if isinstance(models, list) else []
+    except Exception as e:
+        print(f"[-] Error fetching pentest models for resource {resource_instance_id}: {e}")
+        return []
+    
 # ---------- Unified inventory + thin wrappers ----------
 
 def list_resources(
