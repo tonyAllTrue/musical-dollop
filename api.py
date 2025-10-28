@@ -470,6 +470,90 @@ def build_scope_filters(
     return params
 
 
+def get_llm_pentest_models(jwt_token: str, resource_instance_id: str) -> List[str]:
+    """
+    Fetch available models for a specific LLM endpoint resource.
+    Returns list of model names that can be used for pentesting this resource.
+    """
+    endpoint = f"/v2/llm-pentest/customer/{config.CUSTOMER_ID}/llm-pentest-models/{resource_instance_id}"
+    try:
+        resp = make_api_request(endpoint, token=jwt_token, method="GET", timeout=30)
+        models = resp.json()
+        return models if isinstance(models, list) else []
+    except Exception as e:
+        print(f"[-] Error fetching pentest models for resource {resource_instance_id}: {e}")
+        return []
+    
+def configure_llm_endpoint_system_prompt(
+    jwt_token: str,
+    resource_instance_id: str,
+    system_prompt: str | None = None,
+) -> dict:
+    """
+    Configure system prompt for an LLM endpoint resource before pentesting.
+    
+    PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
+    
+    This must be called before start-pentest if PENTEST_SYSTEM_PROMPT_ENABLED is true
+    and PENTEST_SYSTEM_PROMPT_TEXT is provided.
+    
+    Args:
+        jwt_token: JWT authentication token
+        resource_instance_id: The resource instance UUID
+        system_prompt: The system prompt text to configure (or None/empty to clear)
+        
+    Returns:
+        Response JSON from the PATCH endpoint
+    """
+    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
+    
+    # First GET to retrieve existing config
+    get_resp = make_api_request(
+        endpoint,
+        token=jwt_token,
+        method="GET",
+        timeout=30,
+    )
+    existing_config = get_resp.json()
+    
+    # Build PATCH payload (preserve other fields, update system prompt)
+    patch_data = {
+        "llm_endpoint_resource_config_id": existing_config.get("llm_endpoint_resource_config_id"),
+        "customer_id": config.CUSTOMER_ID,
+        "resource_instance_id": resource_instance_id,
+        "llm_endpoint_pentesting_system_prompt": system_prompt or "",
+        "llm_endpoint_pentesting_reference_capture_replay_dataset_id": existing_config.get("llm_endpoint_pentesting_reference_capture_replay_dataset_id"),
+        "llm_endpoint_resource_system_description": existing_config.get("llm_endpoint_resource_system_description", ""),
+    }
+    
+    resp = make_api_request(
+        endpoint,
+        token=jwt_token,
+        method="PATCH",
+        data=patch_data,
+        timeout=30,
+    )
+    return resp.json()
+
+
+def cleanup_llm_endpoint_system_prompt(jwt_token: str, resource_instance_id: str) -> dict:
+    """
+    Clear system prompt from resource after pentesting (optional cleanup).
+    Uses same PATCH endpoint but sets empty string.
+    
+    Args:
+        jwt_token: JWT authentication token
+        resource_instance_id: The resource instance UUID
+        
+    Returns:
+        Response JSON from the PATCH endpoint
+    """
+    return configure_llm_endpoint_system_prompt(
+        jwt_token=jwt_token,
+        resource_instance_id=resource_instance_id,
+        system_prompt="",
+    )
+    
 # ---------- Unified inventory + thin wrappers ----------
 
 def list_resources(
