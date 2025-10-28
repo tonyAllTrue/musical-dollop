@@ -84,10 +84,12 @@ def parse_model_mapping(mapping_str: str) -> Dict[str, str]:
 PENTEST_MODEL_MAPPING: Dict[str, str] = parse_model_mapping(PENTEST_MODEL_MAPPING_STR)
 
 PENTEST_SYSTEM_PROMPT_ENABLED = os.getenv("PENTEST_SYSTEM_PROMPT_ENABLED", "false").lower() == "true"
-PENTEST_APPLY_GUARDRAILS = os.getenv("PENTEST_APPLY_GUARDRAILS", "false").lower() == "true"
-
 # Optional: custom system prompt text
 PENTEST_SYSTEM_PROMPT_TEXT = os.getenv("PENTEST_SYSTEM_PROMPT_TEXT", "")
+# Optional: Clear system prompt from resource after pentest completes
+PENTEST_CLEANUP_SYSTEM_PROMPT = os.getenv("PENTEST_CLEANUP_SYSTEM_PROMPT", "true").lower() == "true"
+
+PENTEST_APPLY_GUARDRAILS = os.getenv("PENTEST_APPLY_GUARDRAILS", "false").lower() == "true"
 
 # Optional stagger between start requests (seconds)
 START_STAGGER_SECS = float(os.getenv("START_STAGGER_SECS", "0"))

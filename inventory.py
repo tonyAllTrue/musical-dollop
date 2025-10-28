@@ -258,7 +258,7 @@ def select_with_scope(
     include_predicate: Optional[Predicate] = None,
     valid_predicate: Optional[Predicate] = None,
     pass_valid_only_to_api: bool = False,
-    return_full_resources: bool = False,  # NEW parameter
+    return_full_resources: bool = False,  
 ) -> Union[Tuple[List[str], Dict[str, str]], Tuple[List[str], Dict[str, str], List[dict]]]:
     """
     Generic org/project/resource selection based on config:
