@@ -91,6 +91,9 @@ PENTEST_CLEANUP_SYSTEM_PROMPT = os.getenv("PENTEST_CLEANUP_SYSTEM_PROMPT", "true
 
 PENTEST_APPLY_GUARDRAILS = os.getenv("PENTEST_APPLY_GUARDRAILS", "false").lower() == "true"
 
+# Number of attempts per test case (1 = run once, 2+ = rerun to account for LLM variability)
+PENTEST_NUM_ATTEMPTS = int(os.getenv("PENTEST_NUM_ATTEMPTS", "1"))
+
 # Optional stagger between start requests (seconds)
 START_STAGGER_SECS = float(os.getenv("START_STAGGER_SECS", "0"))
 
@@ -178,6 +181,7 @@ def print_config_banner() -> None:
     if ENABLE_LLM_PENTEST:
         print(f"HAS_VALID_PENTEST_CONNECTION_DETAILS: {HAS_VALID_PENTEST_CONNECTION_DETAILS}")
         print(f"TARGET_TEMPLATE_NAME: {TARGET_TEMPLATE_NAME}")
+        print(f"PENTEST_NUM_ATTEMPTS: {PENTEST_NUM_ATTEMPTS}")
         if PENTEST_MODEL_MAPPING:
             print(f"PENTEST_MODEL_MAPPING:")
             for resource_type, model in PENTEST_MODEL_MAPPING.items():
