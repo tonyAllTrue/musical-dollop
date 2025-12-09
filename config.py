@@ -89,6 +89,14 @@ PENTEST_SYSTEM_PROMPT_TEXT = os.getenv("PENTEST_SYSTEM_PROMPT_TEXT", "")
 # Optional: Clear system prompt from resource after pentest completes
 PENTEST_CLEANUP_SYSTEM_PROMPT = os.getenv("PENTEST_CLEANUP_SYSTEM_PROMPT", "true").lower() == "true"
 
+# Dataset configuration for capture-replay pentesting
+PENTEST_DATASET_ENABLED = os.getenv("PENTEST_DATASET_ENABLED", "false").lower() == "true"
+# Dataset ID or name (will be resolved to ID at runtime)
+PENTEST_DATASET_ID = os.getenv("PENTEST_DATASET_ID", "")
+PENTEST_DATASET_NAME = os.getenv("PENTEST_DATASET_NAME", "")
+# Optional: Clear dataset from resource after pentest completes
+PENTEST_CLEANUP_DATASET = os.getenv("PENTEST_CLEANUP_DATASET", "true").lower() == "true"
+
 PENTEST_APPLY_GUARDRAILS = os.getenv("PENTEST_APPLY_GUARDRAILS", "false").lower() == "true"
 
 # Number of attempts per test case (1 = run once, 2+ = rerun to account for LLM variability)
@@ -187,9 +195,16 @@ def print_config_banner() -> None:
             for resource_type, model in PENTEST_MODEL_MAPPING.items():
                 print(f"  - {resource_type}: {model}")
         print(f"PENTEST_SYSTEM_PROMPT_ENABLED: {PENTEST_SYSTEM_PROMPT_ENABLED}")
-        print(f"PENTEST_APPLY_GUARDRAILS: {PENTEST_APPLY_GUARDRAILS}")
         if PENTEST_SYSTEM_PROMPT_TEXT:
             print(f"PENTEST_SYSTEM_PROMPT_TEXT: {PENTEST_SYSTEM_PROMPT_TEXT[:100]}...")
+        print(f"PENTEST_DATASET_ENABLED: {PENTEST_DATASET_ENABLED}")
+        if PENTEST_DATASET_ENABLED:
+            if PENTEST_DATASET_ID:
+                print(f"PENTEST_DATASET_ID: {PENTEST_DATASET_ID}")
+            if PENTEST_DATASET_NAME:
+                print(f"PENTEST_DATASET_NAME: {PENTEST_DATASET_NAME}")
+            print(f"PENTEST_CLEANUP_DATASET: {PENTEST_CLEANUP_DATASET}")
+        print(f"PENTEST_APPLY_GUARDRAILS: {PENTEST_APPLY_GUARDRAILS}")
     print(f"ENABLE_MODEL_SCANNING: {ENABLE_MODEL_SCANNING}")
     if ENABLE_MODEL_SCANNING:
         print(f"MODEL_SCAN_POLICIES: {MODEL_SCAN_POLICIES or '(none)'}")

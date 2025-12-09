@@ -553,7 +553,152 @@ def cleanup_llm_endpoint_system_prompt(jwt_token: str, resource_instance_id: str
         resource_instance_id=resource_instance_id,
         system_prompt="",
     )
+
+def list_importable_datasets(jwt_token: str, project_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch available datasets for a project that can be used for capture-replay pentesting.
     
+    GET /v2/ai-validation/importable-datasets?project_id={project_id}
+    
+    Response format:
+    {
+        "datasets": [
+            {
+                "capture_replay_dataset_id": "uuid",
+                "name": "Dataset Name",
+                "description": "...",
+                "request_count": 100,
+                "importable_count": 100,
+                "created_at": "2025-11-17T23:09:36.827825Z",
+                "organization_id": "uuid",
+                "project_id": "uuid"
+            }
+        ]
+    }
+    
+    Args:
+        jwt_token: JWT authentication token
+        project_id: The project UUID
+        
+    Returns:
+        List of dataset dicts
+    """
+    endpoint = f"/v2/ai-validation/importable-datasets"
+    params = {"project_id": project_id}
+    
+    try:
+        resp = make_api_request(
+            endpoint,
+            token=jwt_token,
+            method="GET",
+            params=params,
+            timeout=30,
+        )
+        data = resp.json()
+        datasets = data.get("datasets", [])
+        return datasets if isinstance(datasets, list) else []
+    except Exception as e:
+        print(f"[-] Error fetching importable datasets for project {project_id}: {e}")
+        return []
+
+
+def resolve_dataset_name_to_id(
+    jwt_token: str,
+    dataset_name: str,
+    project_id: str,
+) -> Optional[str]:
+    """
+    Look up a dataset by name within a project and return its ID.
+    Returns None if not found.
+    
+    Args:
+        jwt_token: JWT authentication token
+        dataset_name: Name to search for (case-insensitive match)
+        project_id: Project UUID to search within
+        
+    Returns:
+        Dataset UUID (capture_replay_dataset_id) if found, None otherwise
+    """
+    datasets = list_importable_datasets(jwt_token, project_id)
+    dataset_name_lower = dataset_name.strip().lower()
+    
+    for ds in datasets:
+        if ds.get("name", "").strip().lower() == dataset_name_lower:
+            return ds.get("capture_replay_dataset_id")
+    
+    return None
+
+
+def configure_llm_endpoint_dataset(
+    jwt_token: str,
+    resource_instance_id: str,
+    dataset_id: str | None = None,
+) -> dict:
+    """
+    Configure capture-replay dataset for an LLM endpoint resource before pentesting.
+    
+    Uses the same PATCH endpoint as system prompt configuration.
+    
+    PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
+    
+    Args:
+        jwt_token: JWT authentication token
+        resource_instance_id: The resource instance UUID
+        dataset_id: The dataset UUID to configure (or None/empty to clear)
+        
+    Returns:
+        Response JSON from the PATCH endpoint
+    """
+    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
+    
+    # First GET to retrieve existing config
+    get_resp = make_api_request(
+        endpoint,
+        token=jwt_token,
+        method="GET",
+        timeout=30,
+    )
+    existing_config = get_resp.json()
+    
+    # Build PATCH payload (preserve other fields, update dataset)
+    patch_data = {
+        "llm_endpoint_resource_config_id": existing_config.get("llm_endpoint_resource_config_id"),
+        "customer_id": config.CUSTOMER_ID,
+        "resource_instance_id": resource_instance_id,
+        "llm_endpoint_pentesting_system_prompt": existing_config.get("llm_endpoint_pentesting_system_prompt", ""),
+        "llm_endpoint_pentesting_reference_capture_replay_dataset_id": dataset_id,
+        "llm_endpoint_resource_system_description": existing_config.get("llm_endpoint_resource_system_description", ""),
+    }
+    
+    resp = make_api_request(
+        endpoint,
+        token=jwt_token,
+        method="PATCH",
+        data=patch_data,
+        timeout=30,
+    )
+    return resp.json()
+
+
+def cleanup_llm_endpoint_dataset(jwt_token: str, resource_instance_id: str) -> dict:
+    """
+    Clear dataset from resource after pentesting (optional cleanup).
+    Sets dataset_id to None/null.
+    
+    Args:
+        jwt_token: JWT authentication token
+        resource_instance_id: The resource instance UUID
+        
+    Returns:
+        Response JSON from the PATCH endpoint
+    """
+    return configure_llm_endpoint_dataset(
+        jwt_token=jwt_token,
+        resource_instance_id=resource_instance_id,
+        dataset_id=None,
+    )
+
+ 
 # ---------- Unified inventory + thin wrappers ----------
 
 def list_resources(
