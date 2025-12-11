@@ -891,19 +891,25 @@ def query_model_scan_execution_full(jwt_token: str, model_scan_execution_id: str
 
 # ---------- v2 GraphQL: PentestScanSummaries ----------
 
-_PENTEST_SCAN_SUMMARIES_QUERY = """
-query PentestScanSummariesModelScans($customerId: UUID!, $organizationId: UUID) {
-  pentestScanSummaries(
+_MODEL_SCAN_SUMMARIES_QUERY = """
+query ModelScanSummaries($customerId: UUID!, $organizationId: UUID, $projectId: UUID) {
+  modelScanSummaries(
     filter: {
+      page: 1
       sortOrder: DESC
       customerId: $customerId
-      executionTypes: MODEL_SCAN
       organizationId: $organizationId
+      projectId: $projectId
     }
   ) {
+    pagination {
+      currentPage
+      perPage
+      totalItems
+    }
     items {
+      startedAt
       executionStatus
-      executionType
       modelScanExecutionId
       modelScanExecutionStatus
       modelScanIsCompleted
@@ -912,13 +918,13 @@ query PentestScanSummariesModelScans($customerId: UUID!, $organizationId: UUID) 
       numOfIssues
       outcomeLevel
       resourceInstance {
+        customerId
         displayName
+        registeredAt
         resourceIdentifier
         resourceInstanceId
         resourceType
       }
-      scanId
-      startedAt
     }
   }
 }
@@ -1008,20 +1014,34 @@ def _try_fetch_model_scan_id_once(
     If min_started_at_iso is provided, only accept summaries whose startedAt is
     >= that ISO timestamp.
     """
+    # Build variables with org and project context if available
     variables = {
         "customerId": config.CUSTOMER_ID,
         "organizationId": getattr(config, "ORGANIZATION_ID", None),
+        "projectId": None,  # Will be set below if available
     }
+    
+    # Add project ID if available (for better filtering)
+    if hasattr(config, "PROJECT_IDS") and config.PROJECT_IDS:
+        variables["projectId"] = config.PROJECT_IDS[0]
 
     data = run_graphql(
         jwt_token,
-        _PENTEST_SCAN_SUMMARIES_QUERY,
+        _MODEL_SCAN_SUMMARIES_QUERY,
         variables,
         version="v2",
         timeout=60,
     )
 
-    items = (((data or {}).get("pentestScanSummaries") or {}).get("items")) or []
+    # Extract items from the response
+    summaries = data.get("modelScanSummaries") or {}
+    items = summaries.get("items") or []
+    
+    # Log pagination info for debugging
+    pagination = summaries.get("pagination") or {}
+    total_items = pagination.get("totalItems", 0)
+    if total_items > 0:
+        print(f"[model-scan-bind] Found {total_items} total model scan executions in system")
 
     # Helper: robust ISO8601 parsing (handles trailing 'Z')
     def _to_dt(s: Optional[str]):
@@ -1035,15 +1055,19 @@ def _try_fetch_model_scan_id_once(
 
     min_dt = _to_dt(min_started_at_iso) if min_started_at_iso else None
 
+    # Find matching execution
     for it in items:
         ri = (it.get("resourceInstance") or {})
         if ri.get("resourceInstanceId") != resource_instance_id:
             continue
+        
+        # Check timestamp if min_started_at_iso provided
         if min_dt:
             started = _to_dt(it.get("startedAt"))
             # If we can't parse startedAt, be conservative and skip
             if not started or started < min_dt:
                 continue
+        
         return it
 
     return None
@@ -1059,7 +1083,21 @@ def poll_model_scan_execution_id(
 ) -> Optional[str]:
     """
     Poll GraphQL summaries until we can resolve a modelScanExecutionId for the given resource_instance_id.
+    
+    Args:
+        jwt_token: JWT authentication token
+        resource_instance_id: The resource UUID to find execution for
+        poll_interval_secs: Seconds between poll attempts
+        timeout_secs: Maximum time to poll before giving up
+        min_started_at_iso: Optional ISO timestamp - only return executions started after this time
+        
+    Returns:
+        modelScanExecutionId if found, None if timeout or not found
     """
+    print(f"[model-scan-bind] Polling for execution ID (resource: {resource_instance_id[:8]}...)")
+    if min_started_at_iso:
+        print(f"[model-scan-bind] Only considering executions started >= {min_started_at_iso}")
+    
     def _fetch() -> Optional[str]:
         row = _try_fetch_model_scan_id_once(
             jwt_token,
@@ -1068,7 +1106,15 @@ def poll_model_scan_execution_id(
         )
         if row:
             msid = row.get("modelScanExecutionId")
+            if msid:
+                status = row.get("modelScanExecutionStatus") or "UNKNOWN"
+                print(f"[model-scan-bind] Found execution {msid[:8]}... (status: {status})")
             return msid or None
         return None
 
-    return _poll_until(_fetch, timeout_secs=timeout_secs, interval_secs=poll_interval_secs)
+    result = _poll_until(_fetch, timeout_secs=timeout_secs, interval_secs=poll_interval_secs)
+    
+    if not result:
+        print(f"[model-scan-bind] Failed to resolve execution ID after {timeout_secs}s")
+    
+    return result
