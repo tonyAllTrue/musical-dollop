@@ -243,6 +243,122 @@ def run_model_scan_for_resource(
 
 
 # ---------------------------
+
+
+# ---------------------------
+# CSV generation
+# ---------------------------
+
+def write_model_scan_csv(
+    resource_name: str,
+    resource_id: str,
+    scan_execution_id: str,
+    result: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Write model scan results to CSV file.
+    Creates one row per policy (both violations and passed policies).
+    
+    Returns the filename if successful, None otherwise.
+    """
+    import csv
+    from datetime import datetime, timezone
+    
+    # Get violations (failed policies only)
+    violations = result.get("violations", [])
+    
+    # Also get ALL policies from the GraphQL data if available
+    all_policies = []
+    graphql_data = result.get("raw_return_value", {}).get("graphql", {})
+    per_policy_results = graphql_data.get("modelScanResultsPerPolicy", [])
+    
+    if per_policy_results:
+        # Use the complete per-policy results from GraphQL (includes both failed and passed)
+        for policy_result in per_policy_results:
+            failed = int(policy_result.get("failedTestCases", 0))
+            passed = int(policy_result.get("passedTestCases", 0))
+            total = failed + passed
+            
+            # Find matching violation for details (if this policy failed)
+            details = ""
+            status = "PASSED" if failed == 0 else "UNRESOLVED"
+            for v in violations:
+                if v.get("policy") == policy_result.get("policyName"):
+                    details = v.get("details", "")
+                    status = v.get("status", status)
+                    break
+            
+            all_policies.append({
+                "policy": policy_result.get("policyName", ""),
+                "status": status,
+                "severity": policy_result.get("severity", ""),
+                "failed": failed,
+                "passed": passed,
+                "total": total,
+                "details": details,
+            })
+    elif violations:
+        # Fallback: only have violations data
+        all_policies = violations
+    else:
+        # No data at all - create a single summary row
+        all_policies = [{
+            "policy": "All policies",
+            "status": result.get("status", "PASSED"),
+            "severity": "",
+            "failed": 0,
+            "passed": 0,
+            "total": 0,
+            "details": "No detailed policy results available",
+        }]
+    
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    fname = f"model_scan_results_{api.sanitize_name(resource_name)}_{resource_id[:8]}_{scan_execution_id[:8] if scan_execution_id else 'unknown'}_{ts}.csv"
+    
+    try:
+        with open(fname, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            
+            # Write header
+            writer.writerow([
+                "Resource Name",
+                "Resource ID",
+                "Scan Execution ID",
+                "Overall Status",
+                "Overall Outcome",
+                "Policy Name",
+                "Policy Status",
+                "Severity",
+                "Failed Test Cases",
+                "Passed Test Cases",
+                "Total Test Cases",
+                "Vulnerability Details",
+            ])
+            
+            # Write one row per policy (both failed and passed)
+            for policy in all_policies:
+                writer.writerow([
+                    resource_name,
+                    resource_id,
+                    scan_execution_id or "",
+                    result.get("status", ""),
+                    result.get("outcome", ""),
+                    policy.get("policy", ""),
+                    policy.get("status", ""),
+                    policy.get("severity", ""),
+                    policy.get("failed", 0),
+                    policy.get("passed", 0),
+                    policy.get("total", 0),
+                    policy.get("details", ""),
+                ])
+        
+        print(f"[ModelScan][+] CSV saved as {fname}")
+        return fname
+    except Exception as e:
+        print(f"[ModelScan][-] Error writing CSV {fname}: {e}")
+        return None
+
+
 # Parallel executor
 # ---------------------------
 
@@ -286,6 +402,15 @@ def run_model_scans(jwt: str, selected_ids: List[str], mapping: Dict[str, str]) 
             if results_by_id[rid].get("error"):
                 line += f" [error: {results_by_id[rid].get('error')}]"
             print(line)
+            
+            # Generate CSV for this scan result
+            if rid and results_by_id[rid].get("scan_execution_id"):
+                write_model_scan_csv(
+                    resource_name=rn,
+                    resource_id=rid,
+                    scan_execution_id=results_by_id[rid].get("scan_execution_id"),
+                    result=results_by_id[rid],
+                )
 
     for rid in selected_ids:
         if rid in results_by_id:
