@@ -49,6 +49,31 @@ TARGET_RESOURCE_NAMES: List[str] = parse_csv_string(os.getenv("TARGET_RESOURCE_N
 MODEL_SCAN_POLICIES: List[str] = parse_csv_string(os.getenv("MODEL_SCAN_POLICIES", "model-scan-code-execution-prohibited,model-scan-input-output-operations-prohibited,model-scan-network-access-prohibited,model-scan-malware-signatures-prohibited,model-custom-layers-prohibited"))
 MODEL_SCAN_DESCRIPTION = os.getenv("MODEL_SCAN_DESCRIPTION", "CI Model Scan")
 
+# ---------------------------
+# HuggingFace Model Onboarding (optional)
+# ---------------------------
+# Enable onboarding of HuggingFace models before scanning
+HUGGINGFACE_ONBOARDING_ENABLED = os.getenv("HUGGINGFACE_ONBOARDING_ENABLED", "false").lower() == "true"
+
+# HuggingFace models to onboard
+# Format options:
+#   1. Simple: "org1/repo1,org2/repo2@revision"
+#   2. JSON: '[{"organization_id":"org1","repo_name":"repo1","revision":"main","display_name":"Custom Name"}]'
+HUGGINGFACE_MODELS_TO_ONBOARD = os.getenv("HUGGINGFACE_MODELS_TO_ONBOARD", "")
+
+# Wait time after onboarding before scanning (seconds)
+# Allows time for models to be indexed in inventory
+HUGGINGFACE_ONBOARDING_WAIT_SECS = float(os.getenv("HUGGINGFACE_ONBOARDING_WAIT_SECS", "10"))
+
+# Project ID to associate onboarded models with
+# If not specified, uses the first project from PROJECT_IDS
+HUGGINGFACE_ONBOARDING_PROJECT_ID = os.getenv("HUGGINGFACE_ONBOARDING_PROJECT_ID", "")
+
+# Skip inventory selection and only scan onboarded HuggingFace models
+# When true, no models from inventory will be selected - only onboarded models will be scanned
+HUGGINGFACE_ONBOARDING_ONLY = os.getenv("HUGGINGFACE_ONBOARDING_ONLY", "false").lower() == "true"
+
+
 HAS_VALID_PENTEST_CONNECTION_DETAILS = True
 
 # ---------------------------
@@ -209,6 +234,13 @@ def print_config_banner() -> None:
     if ENABLE_MODEL_SCANNING:
         print(f"MODEL_SCAN_POLICIES: {MODEL_SCAN_POLICIES or '(none)'}")
         print(f"MODEL_SCAN_DESCRIPTION: {MODEL_SCAN_DESCRIPTION}")
+    if HUGGINGFACE_ONBOARDING_ENABLED:
+        print(f"HUGGINGFACE_ONBOARDING_ENABLED: {HUGGINGFACE_ONBOARDING_ENABLED}")
+        print(f"HUGGINGFACE_MODELS_TO_ONBOARD: {HUGGINGFACE_MODELS_TO_ONBOARD}")
+        if HUGGINGFACE_ONBOARDING_PROJECT_ID:
+            print(f"HUGGINGFACE_ONBOARDING_PROJECT_ID: {HUGGINGFACE_ONBOARDING_PROJECT_ID}")
+        print(f"HUGGINGFACE_ONBOARDING_WAIT_SECS: {HUGGINGFACE_ONBOARDING_WAIT_SECS}")
+        print(f"HUGGINGFACE_ONBOARDING_ONLY: {HUGGINGFACE_ONBOARDING_ONLY}")
     print(f"INVENTORY_SCOPE: {INVENTORY_SCOPE}")
     if ORGANIZATION_ID:
         print(f"ORGANIZATION_ID: {ORGANIZATION_ID}")
