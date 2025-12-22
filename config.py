@@ -148,7 +148,8 @@ GRAPHQL_EXTENDED_TIMEOUT_SECS = float(os.getenv("GRAPHQL_EXTENDED_TIMEOUT_SECS",
 GRAPHQL_POLL_INTERVAL_SECS = 120.0  # Poll every 2 minutes in extended mode
 
 # CSV download retry behavior
-CSV_DOWNLOAD_MAX_RETRIES = 4  # Maximum retry attempts for CSV download
+# Since job-status may return COMPLETED before scan finishes, we poll the CSV endpoint
+CSV_DOWNLOAD_MAX_RETRIES = 5  # Maximum retry attempts for CSV download
 CSV_DOWNLOAD_RETRY_DELAY = 10.0  # Seconds to wait between CSV download retries
 CSV_DOWNLOAD_INITIAL_WAIT = 10.0  # Seconds to wait after COMPLETED before first download attempt
 

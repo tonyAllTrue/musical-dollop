@@ -281,6 +281,9 @@ def download_results_csv(jwt_token: str, resource_name: str, resource_id: str, s
             f.write(resp.content)
         print(f"[Thread: {threading.current_thread().name}][+] CSV saved as {fname}")
         return fname
+    except requests.HTTPError:
+        # Re-raise HTTP errors so retry logic can handle them
+        raise
     except Exception as e:
         print(f"[Thread: {threading.current_thread().name}][-] Error downloading results: {e}")
         return None
