@@ -433,7 +433,15 @@ def create_failed_category_issues_for_results(results: List[dict]) -> int:
                 jwt, exec_id=exec_id, res_name=res_name, cat_name=cat_name
             )
 
-            marker = f"<!-- llm_pentest_exec:{exec_id} category:{cat_name} -->"
+            marker = f"<!-- llm_pentest resource:{res_id} category:{cat_name} -->"
+
+            # Deduplication check (same as model scan)
+            try:
+                if _search_issue_by_marker(marker):
+                    print(f"⏭️  Skipping duplicate for {res_name} / {cat_name} (open issue exists).")
+                    continue
+            except Exception as e:
+                print(f"⚠️  Dedupe check failed ({e}); attempting to create issue anyway.")
 
             header = _header_common(
                 resource_name=res_name,
