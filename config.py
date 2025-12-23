@@ -135,23 +135,11 @@ MAX_START_RETRIES = int(os.getenv("MAX_START_RETRIES", "3"))
 START_RETRY_DELAY = float(os.getenv("START_RETRY_DELAY", "30"))
 
 # Polling behavior
-POLL_INTERVAL_SECS = 60.0  # Poll every 60 seconds
+# We poll GraphQL directly as the source of truth
+GRAPHQL_POLL_INTERVAL_SECS = float(os.getenv("GRAPHQL_POLL_INTERVAL_SECS", "30"))  # Poll every 30 seconds
 POLL_TIMEOUT_SECS = float(os.getenv("POLL_TIMEOUT_SECS", "4200"))  # 70 minutes
-POLL_BACKOFF_BASE_SECS = 5.0 # Base backoff delay between polls
-POLL_BACKOFF_MAX_SECS = 300.0 # Max backoff delay between polls
-POLL_NOT_FOUND_GRACE = 3  # Number of "not found" responses to ignore before failing
-POLL_STATUS_LOG_EVERY = 10  # Log every 10 polls (10 minutes)
-POLL_TIMEOUT_ACTION    = os.getenv("POLL_TIMEOUT_ACTION", "fail")  # fail|continue|partial
-
-# Extended GraphQL polling after HTTP polling timeout (only if last status was RUNNING)
-GRAPHQL_EXTENDED_TIMEOUT_SECS = float(os.getenv("GRAPHQL_EXTENDED_TIMEOUT_SECS", "1800"))
-GRAPHQL_POLL_INTERVAL_SECS = 120.0  # Poll every 2 minutes in extended mode
-
-# CSV download retry behavior
-# Since job-status may return COMPLETED before scan finishes, we poll the CSV endpoint
-CSV_DOWNLOAD_MAX_RETRIES = 5  # Maximum retry attempts for CSV download
-CSV_DOWNLOAD_RETRY_DELAY = 10.0  # Seconds to wait between CSV download retries
-CSV_DOWNLOAD_INITIAL_WAIT = 10.0  # Seconds to wait after COMPLETED before first download attempt
+POLL_STATUS_LOG_EVERY = 10  # Log every 10 polls (5 minutes at 30s interval)
+POLL_TIMEOUT_ACTION = os.getenv("POLL_TIMEOUT_ACTION", "fail")  # fail|continue|partial
 
 # ---------------------------
 # Outcome thresholding
@@ -262,8 +250,8 @@ def print_config_banner() -> None:
     print(f"MAX_CONCURRENT_PENTESTS: {MAX_CONCURRENT_PENTESTS}")
     if START_STAGGER_SECS:
         print(f"START_STAGGER_SECS: {START_STAGGER_SECS}")
-    print(f"POLL_INTERVAL_SECS: {POLL_INTERVAL_SECS}  POLL_TIMEOUT_SECS: {POLL_TIMEOUT_SECS}")
-    print(f"GRAPHQL_EXTENDED_TIMEOUT_SECS: {GRAPHQL_EXTENDED_TIMEOUT_SECS}")
+    print(f"POLL_TIMEOUT_SECS: {POLL_TIMEOUT_SECS}")
+    print(f"GRAPHQL_POLL_INTERVAL_SECS: {GRAPHQL_POLL_INTERVAL_SECS}")
     if FAIL_OUTCOME_AT_OR_ABOVE:
         print(f"FAIL_OUTCOME_AT_OR_ABOVE: {FAIL_OUTCOME_AT_OR_ABOVE}")
     else:

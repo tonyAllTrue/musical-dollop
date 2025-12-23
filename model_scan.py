@@ -175,7 +175,7 @@ def run_model_scan_for_resource(
     msid = api.poll_model_scan_execution_id(
         jwt_token=jwt,
         resource_instance_id=resource_id,
-        poll_interval_secs=max(2.0, float(config.POLL_INTERVAL_SECS)),
+        poll_interval_secs=max(2.0, float(config.GRAPHQL_POLL_INTERVAL_SECS)),
         timeout_secs=float(config.POLL_TIMEOUT_SECS),
         min_started_at_iso=lower_bound_iso,
     )
@@ -193,7 +193,7 @@ def run_model_scan_for_resource(
         }
 
     # GraphQL polling for completion
-    POLL_INTERVAL_SECS = config.POLL_INTERVAL_SECS
+    POLL_INTERVAL_SECS = config.GRAPHQL_POLL_INTERVAL_SECS
     POLL_TIMEOUT_SECS = config.POLL_TIMEOUT_SECS
     start_ts = time.time()
 
