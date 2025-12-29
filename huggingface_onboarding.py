@@ -5,8 +5,69 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import time
 
+import requests
+
 import api
 import config
+
+
+def _verify_onboarded_resources(
+    jwt: str,
+    requested_resources: List[dict],
+    project_id: str
+) -> List[str]:
+    """
+    Check inventory for recently onboarded resources after a 504 timeout.
+    
+    When the onboarding API times out (504), the resources may still have been
+    created on the backend. This function queries inventory to verify if they exist.
+    
+    Args:
+        jwt: JWT authentication token
+        requested_resources: List of resource configs that were submitted
+        project_id: Project ID where resources should exist
+        
+    Returns:
+        List of resource_instance_ids for resources found in inventory
+    """
+    try:
+        print(f"[HF-Onboard] Querying inventory for {len(requested_resources)} model(s)...")
+        
+        # Get recent model resources in the project
+        # Use model and model_assets categories to catch all HuggingFace models
+        recent_models = api.list_resources(
+            jwt,
+            categories=["model", "model_assets"],
+            project_id=project_id,
+        )
+        
+        print(f"[HF-Onboard] Found {len(recent_models)} total model(s) in project inventory")
+        
+        resource_ids = []
+        resource_name_map = {r["display_name"]: r for r in requested_resources}
+        
+        # Match by display_name (exact match)
+        for req_display_name, req_config in resource_name_map.items():
+            for model in recent_models:
+                model_display_name = model.get("display_name", "")
+                
+                # Exact match on display name
+                if model_display_name == req_display_name:
+                    rid = model.get("resource_instance_id")
+                    if rid:
+                        resource_ids.append(rid)
+                        print(f"[HF-Onboard] ✓ Verified: {req_display_name}")
+                        print(f"              Resource ID: {rid}")
+                        break
+        
+        if not resource_ids:
+            print(f"[HF-Onboard] ⚠️  No matching resources found in inventory")
+        
+        return resource_ids
+        
+    except Exception as e:
+        print(f"[HF-Onboard] ⚠️  Error verifying resources: {e}")
+        return []
 
 
 def onboard_huggingface_models(jwt: str, models: List[Dict[str, Any]], project_id: str) -> List[str]:
@@ -130,6 +191,35 @@ def onboard_huggingface_models(jwt: str, models: List[Dict[str, Any]], project_i
                 time.sleep(config.HUGGINGFACE_ONBOARDING_WAIT_SECS)
 
         return resource_ids
+        
+    except requests.HTTPError as e:
+        # Handle 504 Gateway Timeout - resources may have been created despite timeout
+        if e.response.status_code == 504:
+            print(f"[HF-Onboard] ⏱️  Gateway timeout (504) - resource creation may have succeeded")
+            print(f"[HF-Onboard] Waiting 10s for backend to complete processing...")
+            time.sleep(10)
+            
+            # Query inventory to verify if resources were actually created
+            resource_ids = _verify_onboarded_resources(jwt, resources, project_id)
+            
+            if resource_ids:
+                print(f"\n[HF-Onboard] ✓ Successfully verified {len(resource_ids)} model(s) were created despite timeout")
+                
+                # Wait for indexing as we would normally
+                if config.HUGGINGFACE_ONBOARDING_WAIT_SECS > 0:
+                    print(f"[HF-Onboard] Waiting {config.HUGGINGFACE_ONBOARDING_WAIT_SECS}s for indexing...")
+                    time.sleep(config.HUGGINGFACE_ONBOARDING_WAIT_SECS)
+                
+                return resource_ids
+            else:
+                print(f"[HF-Onboard] ✗ Gateway timeout and resources not found in inventory")
+                print(f"[HF-Onboard]    This may indicate the backend failed to create the resources")
+                return []
+        else:
+            # Other HTTP errors - print and return empty
+            print(f"[HF-Onboard] ✗ Error onboarding models: {e}")
+            return []
+            
     except Exception as e:
         print(f"[HF-Onboard] ✗ Error onboarding models: {e}")
         return []

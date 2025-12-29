@@ -137,7 +137,7 @@ START_RETRY_DELAY = float(os.getenv("START_RETRY_DELAY", "30"))
 # Polling behavior
 # We poll GraphQL directly as the source of truth
 GRAPHQL_POLL_INTERVAL_SECS = float(os.getenv("GRAPHQL_POLL_INTERVAL_SECS", "30"))  # Poll every 30 seconds
-POLL_TIMEOUT_SECS = float(os.getenv("POLL_TIMEOUT_SECS", "4200"))  # 70 minutes
+POLL_TIMEOUT_SECS = float(os.getenv("POLL_TIMEOUT_SECS", "5400"))  # 90 minutes
 POLL_STATUS_LOG_EVERY = 10  # Log every 10 polls (5 minutes at 30s interval)
 POLL_TIMEOUT_ACTION = os.getenv("POLL_TIMEOUT_ACTION", "fail")  # fail|continue|partial
 
