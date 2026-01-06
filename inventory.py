@@ -26,10 +26,71 @@ def _default_name_getter(r: dict) -> str:
     )
 
 
-def _name_match(display: str, needles: List[str]) -> bool:
-    dl = (display or "").lower()
-    return any(substr in dl for substr in needles)
-
+def _enhanced_name_match(display: str, needles: List[str], resource_data: dict) -> bool:
+    """
+    Enhanced matching with pattern prefixes for more precise resource selection.
+    
+    Prefixes:
+    - repo:  Match only ModelPackage (repository-level) resources
+    - file:  Match only file-type resources (ModelFile, ModelArtifactFile, etc.)
+    - =      Exact match on display name (case-insensitive)
+    - * or ? Wildcard pattern (fnmatch)
+    - (none) Substring match (backward compatible, default behavior)
+    
+    Examples:
+    - repo:IHasFarms/MaliciousModel  → Only the ModelPackage, not individual files
+    - file:exploit.py                 → Only file-type resources with this name
+    - =Basic_model ML Model (...)     → Exact match only
+    - *.safetensors                   → All resources with .safetensors in name
+    - IHasFarms                       → Any resource containing "IHasFarms" (original behavior)
+    
+    Args:
+        display: Resource display name
+        needles: List of pattern strings to match against
+        resource_data: Full resource dict with 'resource_type' field
+        
+    Returns:
+        True if the resource matches any of the patterns
+    """
+    import fnmatch
+    
+    dl = display.lower()
+    resource_type = resource_data.get('resource_type', '')
+    
+    for pattern in needles:
+        pattern = pattern.strip()
+        pattern_lower = pattern.lower()
+        
+        # Repository-only: Match only ModelPackage resources
+        if pattern_lower.startswith('repo:'):
+            repo_pattern = pattern_lower[5:]
+            if repo_pattern and resource_type == 'ModelPackage' and repo_pattern in dl:
+                return True
+        
+        # File-only: Match file-type resources (ModelFile, ModelArtifactFile, etc.)
+        # Exclude ModelPackage which represents repositories
+        elif pattern_lower.startswith('file:'):
+            file_pattern = pattern_lower[5:]
+            if file_pattern and resource_type != 'ModelPackage' and file_pattern in dl:
+                return True
+        
+        # Exact match
+        elif pattern.startswith('='):
+            exact_pattern = pattern[1:].lower()
+            if exact_pattern and dl == exact_pattern:
+                return True
+        
+        # Wildcard pattern
+        elif '*' in pattern or '?' in pattern:
+            if fnmatch.fnmatch(dl, pattern.lower()):
+                return True
+        
+        # Default: substring match (backward compatible)
+        else:
+            if pattern.lower() in dl:
+                return True
+    
+    return False
 
 def resolve_config_org_and_projects(jwt: str) -> Tuple[Optional[str], List[str]]:
     """
@@ -311,20 +372,68 @@ def select_with_scope(
 
     elif scope == "resource":
         print(f"[inv] Fetching {entity_label} for resource scope (will filter by IDs/names)…")
-        kwargs = dict(jwt_token=jwt, organization_id=None, project_id=None)
-        if pass_valid_only_to_api:
-            kwargs["valid_only"] = config.HAS_VALID_PENTEST_CONNECTION_DETAILS
-        candidates = list_fn(**kwargs)
+        # Resource scope still needs org/project context for API scoping
+        # Fetch from all resolved projects (or org if no projects specified)
+        batch: List[dict] = []
+        if resolved_project_ids:
+            # Fetch from each project
+            for pid in resolved_project_ids:
+                kwargs = dict(jwt_token=jwt, organization_id=None, project_id=pid)
+                if pass_valid_only_to_api:
+                    kwargs["valid_only"] = config.HAS_VALID_PENTEST_CONNECTION_DETAILS
+                res = list_fn(**kwargs)
+                batch.extend(res)
+            candidates = dedupe_fn(batch) if dedupe_fn else batch
+        else:
+            # Fetch from organization
+            kwargs = dict(jwt_token=jwt, organization_id=resolved_org_id, project_id=None)
+            if pass_valid_only_to_api:
+                kwargs["valid_only"] = config.HAS_VALID_PENTEST_CONNECTION_DETAILS
+            candidates = list_fn(**kwargs)
 
         by_id = {r.lower() for r in config.TARGET_RESOURCE_IDS}
-        by_name = [s.lower() for s in config.TARGET_RESOURCE_NAMES]
+        by_name = [s.strip() for s in config.TARGET_RESOURCE_NAMES]
+
+        # Enhanced logging for pattern-based filtering
+        if by_name:
+            print(f"[inv] Filtering with {len(by_name)} pattern(s):")
+            for pattern in by_name:
+                if pattern.startswith('repo:'):
+                    print(f"      - Repository-level: '{pattern[5:]}' (ModelPackage only)")
+                elif pattern.startswith('file:'):
+                    print(f"      - File-level: '{pattern[5:]}' (non-ModelPackage resources)")
+                elif pattern.startswith('='):
+                    print(f"      - Exact match: '{pattern[1:]}'")
+                elif '*' in pattern or '?' in pattern:
+                    print(f"      - Wildcard: '{pattern}'")
+                else:
+                    print(f"      - Substring: '{pattern}' (matches any resource type)")
 
         filtered: List[dict] = []
         for r in candidates:
             rid = (id_getter(r) or "").lower()
             rname = name_getter(r) or ""
-            if (by_id and rid in by_id) or (by_name and _name_match(rname, by_name)):
+            
+            # ID match
+            if by_id and rid in by_id:
                 filtered.append(r)
+            # Enhanced name match with resource metadata
+            elif by_name and _enhanced_name_match(rname, by_name, r):
+                filtered.append(r)
+
+        # Show detailed matching results
+        if by_name and filtered:
+            print(f"[inv] Pattern matching results:")
+            for pattern in by_name:
+                matched = [r for r in filtered if _enhanced_name_match(name_getter(r), [pattern], r)]
+                if matched:
+                    # Aggregate by resource type
+                    types = {}
+                    for m in matched:
+                        rt = m.get('resource_type', 'Unknown')
+                        types[rt] = types.get(rt, 0) + 1
+                    type_summary = ', '.join([f"{count} {rtype}" for rtype, count in types.items()])
+                    print(f"      - '{pattern}': {len(matched)} resource(s) ({type_summary})")
 
         print(f"[inv] Resource scope: matched {len(filtered)} of {len(candidates)} candidates")
         found = dedupe_fn(filtered) if dedupe_fn else filtered
