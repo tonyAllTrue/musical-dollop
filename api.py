@@ -62,32 +62,32 @@ def _fetch_organizations_and_projects(jwt_token: str, force_refresh: bool = Fals
     """
     Fetch all organizations and their projects for the customer.
     Results are cached to avoid repeated API calls.
-    
+
     Returns list of organization dicts, each containing:
     - organization_id
     - organization_name
     - projects: list of project dicts with project_id and project_name
-    
+
     Raises exception on permission errors to allow caller to handle appropriately.
     """
     global _org_project_cache
-    
+
     with _cache_lock:
         # Return cached data if available and not forcing refresh
         if _org_project_cache is not None and not force_refresh:
             return _org_project_cache
-        
+
         endpoint = f"/v1/admin/customers/{config.CUSTOMER_ID}/organizations/projects"
         params = {
             "organization_status": "active",
             "project_status": "active"
         }
-        
+
         try:
             resp = make_api_request(endpoint, token=jwt_token, method="GET", params=params, timeout=30)
             data = resp.json()
             orgs = data.get("organizations", [])
-            
+
             # Cache the result
             _org_project_cache = orgs
             return orgs
@@ -106,11 +106,11 @@ def list_organizations(jwt_token: str) -> List[Dict[str, Any]]:
     """
     Fetch all organizations for the customer.
     Returns list of organization dicts with 'organization_id' and 'organization_name'.
-    
+
     Note: This uses a cached fetch of the organizations/projects endpoint.
     """
     orgs_with_projects = _fetch_organizations_and_projects(jwt_token)
-    
+
     # Return simplified view (just org info, no projects)
     return [
         {
@@ -125,16 +125,16 @@ def resolve_organization_name_to_id(jwt_token: str, org_name: str) -> Optional[s
     """
     Look up an organization by name and return its ID.
     Returns None if not found.
-    
+
     Note: This uses a cached fetch of the organizations/projects endpoint.
     """
     orgs = _fetch_organizations_and_projects(jwt_token)
     org_name_lower = org_name.strip().lower()
-    
+
     for org in orgs:
         if org.get("organization_name", "").strip().lower() == org_name_lower:
             return org.get("organization_id")
-    
+
     return None
 
 
@@ -142,16 +142,16 @@ def list_projects_for_organization(jwt_token: str, organization_id: str) -> List
     """
     Fetch all projects for a specific organization.
     Returns list of project dicts with 'project_id' and 'project_name'.
-    
+
     Note: This uses a cached fetch of the organizations/projects endpoint.
     """
     orgs = _fetch_organizations_and_projects(jwt_token)
-    
+
     # Find the matching organization and return its projects
     for org in orgs:
         if org.get("organization_id") == organization_id:
             return org.get("projects", [])
-    
+
     return []
 
 
@@ -160,12 +160,12 @@ def resolve_project_name_to_id(jwt_token: str, project_name: str, organization_i
     Look up a project by name and return its ID.
     If organization_id is provided, only search within that organization.
     Returns None if not found.
-    
+
     Note: This uses a cached fetch of the organizations/projects endpoint.
     """
     orgs = _fetch_organizations_and_projects(jwt_token)
     project_name_lower = project_name.strip().lower()
-    
+
     if organization_id:
         # Search within specific organization
         for org in orgs:
@@ -179,7 +179,7 @@ def resolve_project_name_to_id(jwt_token: str, project_name: str, organization_i
             for project in org.get("projects", []):
                 if project.get("project_name", "").strip().lower() == project_name_lower:
                     return project.get("project_id")
-    
+
     return None
 
 
@@ -191,13 +191,13 @@ def resolve_organization_names_or_ids(jwt_token: str, values: List[str]) -> List
     Returns list of organization IDs.
     """
     import uuid
-    
+
     resolved_ids = []
     for value in values:
         value = value.strip()
         if not value:
             continue
-            
+
         # Check if it's already a UUID
         try:
             uuid.UUID(value)
@@ -206,7 +206,7 @@ def resolve_organization_names_or_ids(jwt_token: str, values: List[str]) -> List
             continue
         except ValueError:
             pass
-        
+
         # Try to resolve as name
         org_id = resolve_organization_name_to_id(jwt_token, value)
         if org_id:
@@ -214,7 +214,7 @@ def resolve_organization_names_or_ids(jwt_token: str, values: List[str]) -> List
             print(f"[org-resolve] Resolved organization name '{value}' → {org_id}")
         else:
             print(f"[org-resolve] ⚠️  Could not resolve organization '{value}' (not found or invalid)")
-    
+
     return resolved_ids
 
 
@@ -227,13 +227,13 @@ def resolve_project_names_or_ids(jwt_token: str, values: List[str], organization
     Returns list of project IDs.
     """
     import uuid
-    
+
     resolved_ids = []
     for value in values:
         value = value.strip()
         if not value:
             continue
-            
+
         # Check if it's already a UUID
         try:
             uuid.UUID(value)
@@ -242,7 +242,7 @@ def resolve_project_names_or_ids(jwt_token: str, values: List[str], organization
             continue
         except ValueError:
             pass
-        
+
         # Try to resolve as name
         project_id = resolve_project_name_to_id(jwt_token, value, organization_id)
         if project_id:
@@ -252,7 +252,7 @@ def resolve_project_names_or_ids(jwt_token: str, values: List[str], organization
         else:
             org_context = f" within organization {organization_id}" if organization_id else ""
             print(f"[proj-resolve] ⚠️  Could not resolve project '{value}'{org_context} (not found or invalid)")
-    
+
     return resolved_ids
 
 
@@ -486,23 +486,25 @@ def get_llm_pentest_models(jwt_token: str, resource_instance_id: str) -> List[st
     except Exception as e:
         print(f"[-] Error fetching pentest models for resource {resource_instance_id}: {e}")
         return []
-    
+
 
 # ---------- LLM endpoint "additional config" helpers ----------
-# This endpoint is used by the UI to set BOTH system prompt and capture-replay dataset:
+# This endpoint is used by the UI to set system prompt, dataset, and system description:
 #   PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
 #
 # Important: do NOT accidentally overwrite fields you didn't intend to change.
 # We use a sentinel to distinguish:
 #   - UNSET  : do not touch this field
-#   - None/"": explicitly clear (depending on backend expectations)
+#   - None/"" : explicitly clear (depending on backend expectations)
 #   - str    : set to provided value
 _UNSET = object()
+
 
 def get_llm_endpoint_additional_config(jwt_token: str, resource_instance_id: str) -> dict:
     endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
     resp = make_api_request(endpoint, token=jwt_token, method="GET", timeout=30)
     return resp.json()
+
 
 def patch_llm_endpoint_additional_config(
     jwt_token: str,
@@ -522,11 +524,13 @@ def patch_llm_endpoint_additional_config(
         - str: set
       dataset_id:
         - _UNSET: don't touch
-        - None or "": clear
+        - None: clear (sent as JSON null)  [recommended for UUID fields]
+        - "": clear (may or may not be honored by backend for UUID fields)
         - str: set
       system_description:
         - _UNSET: don't touch
-        - str/""/None: set/clear (only if you intend to modify)
+        - None or "": clear
+        - str: set
     """
     endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
     existing_config = get_llm_endpoint_additional_config(jwt_token, resource_instance_id)
@@ -550,6 +554,7 @@ def patch_llm_endpoint_additional_config(
     resp = make_api_request(endpoint, token=jwt_token, method="PATCH", data=patch_data, timeout=30)
     return resp.json()
 
+
 def configure_llm_endpoint_system_prompt(
     jwt_token: str,
     resource_instance_id: str,
@@ -557,8 +562,6 @@ def configure_llm_endpoint_system_prompt(
 ) -> dict:
     """
     Configure ONLY the system prompt for an LLM endpoint resource.
-
-    PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
 
     Safe behavior:
       - system_prompt is None  -> preserve existing prompt (no change)
@@ -579,27 +582,55 @@ def configure_llm_endpoint_system_prompt(
 def cleanup_llm_endpoint_system_prompt(jwt_token: str, resource_instance_id: str) -> dict:
     """
     Clear system prompt from resource after pentesting (optional cleanup).
-    Uses same PATCH endpoint but sets empty string.
-    
-    Args:
-        jwt_token: JWT authentication token
-        resource_instance_id: The resource instance UUID
-        
-    Returns:
-        Response JSON from the PATCH endpoint
     """
-    return configure_llm_endpoint_system_prompt(
-        jwt_token=jwt_token,
-        resource_instance_id=resource_instance_id,
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
         system_prompt="",
     )
+
+
+def configure_llm_endpoint_system_description(
+    jwt_token: str,
+    resource_instance_id: str,
+    system_description: str | None = None,
+) -> dict:
+    """
+    Configure ONLY the resource system description for an LLM endpoint resource.
+
+    Safe behavior:
+      - system_description is None -> preserve existing description (no change)
+      - system_description is ""   -> clear description
+      - otherwise                  -> set to provided value
+    """
+    if system_description is None:
+        # Preserve (no-op): return current config for visibility.
+        return get_llm_endpoint_additional_config(jwt_token, resource_instance_id)
+
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
+        system_description=system_description,
+    )
+
+
+def cleanup_llm_endpoint_system_description(jwt_token: str, resource_instance_id: str) -> dict:
+    """
+    Clear resource system description from resource after pentesting (optional cleanup).
+    """
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
+        system_description="",
+    )
+
 
 def list_importable_datasets(jwt_token: str, project_id: str) -> List[Dict[str, Any]]:
     """
     Fetch available datasets for a project that can be used for capture-replay pentesting.
-    
+
     GET /v2/ai-validation/importable-datasets?project_id={project_id}
-    
+
     Response format:
     {
         "datasets": [
@@ -615,17 +646,17 @@ def list_importable_datasets(jwt_token: str, project_id: str) -> List[Dict[str, 
             }
         ]
     }
-    
+
     Args:
         jwt_token: JWT authentication token
         project_id: The project UUID
-        
+
     Returns:
         List of dataset dicts
     """
     endpoint = f"/v2/ai-validation/importable-datasets"
     params = {"project_id": project_id}
-    
+
     try:
         resp = make_api_request(
             endpoint,
@@ -650,22 +681,22 @@ def resolve_dataset_name_to_id(
     """
     Look up a dataset by name within a project and return its ID.
     Returns None if not found.
-    
+
     Args:
         jwt_token: JWT authentication token
         dataset_name: Name to search for (case-insensitive match)
         project_id: Project UUID to search within
-        
+
     Returns:
         Dataset UUID (capture_replay_dataset_id) if found, None otherwise
     """
     datasets = list_importable_datasets(jwt_token, project_id)
     dataset_name_lower = dataset_name.strip().lower()
-    
+
     for ds in datasets:
         if ds.get("name", "").strip().lower() == dataset_name_lower:
             return ds.get("capture_replay_dataset_id")
-    
+
     return None
 
 
@@ -677,11 +708,9 @@ def configure_llm_endpoint_dataset(
     """
     Configure ONLY the capture-replay dataset for an LLM endpoint resource.
 
-    PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
-
     Safe behavior:
       - dataset_id is None -> preserve existing dataset (no change)
-      - dataset_id is ""   -> clear dataset
+      - dataset_id is ""   -> clear dataset (not recommended for UUID fields; may not be honored)
       - otherwise          -> set to provided dataset UUID
     """
     if dataset_id is None:
@@ -698,22 +727,18 @@ def configure_llm_endpoint_dataset(
 def cleanup_llm_endpoint_dataset(jwt_token: str, resource_instance_id: str) -> dict:
     """
     Clear dataset from resource after pentesting (optional cleanup).
-    Sets dataset_id to None/null.
-    
-    Args:
-        jwt_token: JWT authentication token
-        resource_instance_id: The resource instance UUID
-        
-    Returns:
-        Response JSON from the PATCH endpoint
+
+    IMPORTANT:
+      - We use JSON null (Python None) for UUID clear semantics.
+      - Do NOT call configure_llm_endpoint_dataset(..., None) because None there means "preserve".
     """
-    return configure_llm_endpoint_dataset(
-        jwt_token=jwt_token,
-        resource_instance_id=resource_instance_id,
-        dataset_id=None,
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
+        dataset_id=None,  # JSON null => clear
     )
 
- 
+
 # ---------- Unified inventory + thin wrappers ----------
 
 def list_resources(
@@ -998,6 +1023,7 @@ def query_model_scan_details(jwt_token: str, model_scan_execution_id: str) -> di
 
 T = TypeVar("T")
 
+
 def _poll_until(
     fetch_func: Callable[[], Optional[T]],
     timeout_secs: float,
@@ -1010,7 +1036,7 @@ def _poll_until(
             result = fetch_func()
             if result:
                 return result
-        except Exception as e:
+        except Exception:
             # Swallow and keep polling; callers should handle logging/retries if desired.
             pass
         _t.sleep(max(0.0, interval_secs))
@@ -1035,7 +1061,7 @@ def _try_fetch_model_scan_id_once(
         "organizationId": getattr(config, "ORGANIZATION_ID", None),
         "projectId": None,  # Will be set below if available
     }
-    
+
     # Add project ID if available (for better filtering)
     if hasattr(config, "PROJECT_IDS") and config.PROJECT_IDS:
         variables["projectId"] = config.PROJECT_IDS[0]
@@ -1051,7 +1077,7 @@ def _try_fetch_model_scan_id_once(
     # Extract items from the response
     summaries = data.get("modelScanSummaries") or {}
     items = summaries.get("items") or []
-    
+
     # Log pagination info for debugging
     pagination = summaries.get("pagination") or {}
     total_items = pagination.get("totalItems", 0)
@@ -1075,14 +1101,14 @@ def _try_fetch_model_scan_id_once(
         ri = (it.get("resourceInstance") or {})
         if ri.get("resourceInstanceId") != resource_instance_id:
             continue
-        
+
         # Check timestamp if min_started_at_iso provided
         if min_dt:
             started = _to_dt(it.get("startedAt"))
             # If we can't parse startedAt, be conservative and skip
             if not started or started < min_dt:
                 continue
-        
+
         return it
 
     return None
@@ -1098,21 +1124,21 @@ def poll_model_scan_execution_id(
 ) -> Optional[str]:
     """
     Poll GraphQL summaries until we can resolve a modelScanExecutionId for the given resource_instance_id.
-    
+
     Args:
         jwt_token: JWT authentication token
         resource_instance_id: The resource UUID to find execution for
         poll_interval_secs: Seconds between poll attempts
         timeout_secs: Maximum time to poll before giving up
         min_started_at_iso: Optional ISO timestamp - only return executions started after this time
-        
+
     Returns:
         modelScanExecutionId if found, None if timeout or not found
     """
     print(f"[model-scan-bind] Polling for execution ID (resource: {resource_instance_id[:8]}...)")
     if min_started_at_iso:
         print(f"[model-scan-bind] Only considering executions started >= {min_started_at_iso}")
-    
+
     def _fetch() -> Optional[str]:
         row = _try_fetch_model_scan_id_once(
             jwt_token,
@@ -1128,8 +1154,8 @@ def poll_model_scan_execution_id(
         return None
 
     result = _poll_until(_fetch, timeout_secs=timeout_secs, interval_secs=poll_interval_secs)
-    
+
     if not result:
         print(f"[model-scan-bind] Failed to resolve execution ID after {timeout_secs}s")
-    
+
     return result
