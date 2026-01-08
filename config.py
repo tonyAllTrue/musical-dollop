@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
 from utils import parse_csv_string
@@ -110,9 +110,14 @@ PENTEST_MODEL_MAPPING: Dict[str, str] = parse_model_mapping(PENTEST_MODEL_MAPPIN
 
 PENTEST_SYSTEM_PROMPT_ENABLED = os.getenv("PENTEST_SYSTEM_PROMPT_ENABLED", "false").lower() == "true"
 # Optional: custom system prompt text
-PENTEST_SYSTEM_PROMPT_TEXT = os.getenv("PENTEST_SYSTEM_PROMPT_TEXT", "")
+PENTEST_SYSTEM_PROMPT_TEXT: Optional[str] = (os.getenv("PENTEST_SYSTEM_PROMPT_TEXT", "").strip() or None)
 # Optional: Clear system prompt from resource after pentest completes
 PENTEST_CLEANUP_SYSTEM_PROMPT = os.getenv("PENTEST_CLEANUP_SYSTEM_PROMPT", "true").lower() == "true"
+
+# Optional: resource system description (llm_endpoint_resource_system_description)
+PENTEST_RESOURCE_SYSTEM_DESCRIPTION_ENABLED = os.getenv("PENTEST_RESOURCE_SYSTEM_DESCRIPTION_ENABLED", "false").lower() == "true"
+PENTEST_RESOURCE_SYSTEM_DESCRIPTION_TEXT: Optional[str] = (os.getenv("PENTEST_RESOURCE_SYSTEM_DESCRIPTION_TEXT", "").strip() or None)
+PENTEST_CLEANUP_RESOURCE_SYSTEM_DESCRIPTION = os.getenv("PENTEST_CLEANUP_RESOURCE_SYSTEM_DESCRIPTION", "false").lower() == "true"
 
 # Dataset configuration for capture-replay pentesting
 PENTEST_DATASET_ENABLED = os.getenv("PENTEST_DATASET_ENABLED", "false").lower() == "true"
@@ -216,6 +221,10 @@ def print_config_banner() -> None:
         print(f"PENTEST_SYSTEM_PROMPT_ENABLED: {PENTEST_SYSTEM_PROMPT_ENABLED}")
         if PENTEST_SYSTEM_PROMPT_TEXT:
             print(f"PENTEST_SYSTEM_PROMPT_TEXT: {PENTEST_SYSTEM_PROMPT_TEXT[:100]}...")
+        print(f"PENTEST_RESOURCE_SYSTEM_DESCRIPTION_ENABLED: {PENTEST_RESOURCE_SYSTEM_DESCRIPTION_ENABLED}")
+        if PENTEST_RESOURCE_SYSTEM_DESCRIPTION_TEXT:
+            print(f"PENTEST_RESOURCE_SYSTEM_DESCRIPTION_TEXT: {PENTEST_RESOURCE_SYSTEM_DESCRIPTION_TEXT[:100]}...")
+        print(f"PENTEST_CLEANUP_RESOURCE_SYSTEM_DESCRIPTION: {PENTEST_CLEANUP_RESOURCE_SYSTEM_DESCRIPTION}")
         print(f"PENTEST_DATASET_ENABLED: {PENTEST_DATASET_ENABLED}")
         if PENTEST_DATASET_ENABLED:
             if PENTEST_DATASET_ID:

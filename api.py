@@ -487,56 +487,93 @@ def get_llm_pentest_models(jwt_token: str, resource_instance_id: str) -> List[st
         print(f"[-] Error fetching pentest models for resource {resource_instance_id}: {e}")
         return []
     
+
+# ---------- LLM endpoint "additional config" helpers ----------
+# This endpoint is used by the UI to set BOTH system prompt and capture-replay dataset:
+#   PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
+#
+# Important: do NOT accidentally overwrite fields you didn't intend to change.
+# We use a sentinel to distinguish:
+#   - UNSET  : do not touch this field
+#   - None/"": explicitly clear (depending on backend expectations)
+#   - str    : set to provided value
+_UNSET = object()
+
+def get_llm_endpoint_additional_config(jwt_token: str, resource_instance_id: str) -> dict:
+    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
+    resp = make_api_request(endpoint, token=jwt_token, method="GET", timeout=30)
+    return resp.json()
+
+def patch_llm_endpoint_additional_config(
+    jwt_token: str,
+    resource_instance_id: str,
+    *,
+    system_prompt: object = _UNSET,
+    dataset_id: object = _UNSET,
+    system_description: object = _UNSET,
+) -> dict:
+    """
+    Safely PATCH LLM endpoint additional config without clobbering unrelated fields.
+
+    Args:
+      system_prompt:
+        - _UNSET: don't touch
+        - None or "": clear
+        - str: set
+      dataset_id:
+        - _UNSET: don't touch
+        - None or "": clear
+        - str: set
+      system_description:
+        - _UNSET: don't touch
+        - str/""/None: set/clear (only if you intend to modify)
+    """
+    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
+    existing_config = get_llm_endpoint_additional_config(jwt_token, resource_instance_id)
+
+    patch_data: dict = {
+        "llm_endpoint_resource_config_id": existing_config.get("llm_endpoint_resource_config_id"),
+        "customer_id": config.CUSTOMER_ID,
+        "resource_instance_id": resource_instance_id,
+    }
+
+    # Only include fields we explicitly intend to change.
+    if system_prompt is not _UNSET:
+        patch_data["llm_endpoint_pentesting_system_prompt"] = system_prompt
+
+    if dataset_id is not _UNSET:
+        patch_data["llm_endpoint_pentesting_reference_capture_replay_dataset_id"] = dataset_id
+
+    if system_description is not _UNSET:
+        patch_data["llm_endpoint_resource_system_description"] = system_description
+
+    resp = make_api_request(endpoint, token=jwt_token, method="PATCH", data=patch_data, timeout=30)
+    return resp.json()
+
 def configure_llm_endpoint_system_prompt(
     jwt_token: str,
     resource_instance_id: str,
     system_prompt: str | None = None,
 ) -> dict:
     """
-    Configure system prompt for an LLM endpoint resource before pentesting.
-    
+    Configure ONLY the system prompt for an LLM endpoint resource.
+
     PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
-    
-    This must be called before start-pentest if PENTEST_SYSTEM_PROMPT_ENABLED is true
-    and PENTEST_SYSTEM_PROMPT_TEXT is provided.
-    
-    Args:
-        jwt_token: JWT authentication token
-        resource_instance_id: The resource instance UUID
-        system_prompt: The system prompt text to configure (or None/empty to clear)
-        
-    Returns:
-        Response JSON from the PATCH endpoint
+
+    Safe behavior:
+      - system_prompt is None  -> preserve existing prompt (no change)
+      - system_prompt is ""    -> clear prompt
+      - otherwise              -> set to provided value
     """
-    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
-    
-    # First GET to retrieve existing config
-    get_resp = make_api_request(
-        endpoint,
-        token=jwt_token,
-        method="GET",
-        timeout=30,
+    if system_prompt is None:
+        # Preserve (no-op): return current config for visibility.
+        return get_llm_endpoint_additional_config(jwt_token, resource_instance_id)
+
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
+        system_prompt=system_prompt,
     )
-    existing_config = get_resp.json()
-    
-    # Build PATCH payload (preserve other fields, update system prompt)
-    patch_data = {
-        "llm_endpoint_resource_config_id": existing_config.get("llm_endpoint_resource_config_id"),
-        "customer_id": config.CUSTOMER_ID,
-        "resource_instance_id": resource_instance_id,
-        "llm_endpoint_pentesting_system_prompt": system_prompt or "",
-        "llm_endpoint_pentesting_reference_capture_replay_dataset_id": existing_config.get("llm_endpoint_pentesting_reference_capture_replay_dataset_id"),
-        "llm_endpoint_resource_system_description": existing_config.get("llm_endpoint_resource_system_description", ""),
-    }
-    
-    resp = make_api_request(
-        endpoint,
-        token=jwt_token,
-        method="PATCH",
-        data=patch_data,
-        timeout=30,
-    )
-    return resp.json()
 
 
 def cleanup_llm_endpoint_system_prompt(jwt_token: str, resource_instance_id: str) -> dict:
@@ -635,52 +672,27 @@ def resolve_dataset_name_to_id(
 def configure_llm_endpoint_dataset(
     jwt_token: str,
     resource_instance_id: str,
-    dataset_id: str | None = None,
+    dataset_id: str | None,
 ) -> dict:
     """
-    Configure capture-replay dataset for an LLM endpoint resource before pentesting.
-    
-    Uses the same PATCH endpoint as system prompt configuration.
-    
+    Configure ONLY the capture-replay dataset for an LLM endpoint resource.
+
     PATCH /v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config
-    
-    Args:
-        jwt_token: JWT authentication token
-        resource_instance_id: The resource instance UUID
-        dataset_id: The dataset UUID to configure (or None/empty to clear)
-        
-    Returns:
-        Response JSON from the PATCH endpoint
+
+    Safe behavior:
+      - dataset_id is None -> preserve existing dataset (no change)
+      - dataset_id is ""   -> clear dataset
+      - otherwise          -> set to provided dataset UUID
     """
-    endpoint = f"/v1/inventory/customer/resource/{resource_instance_id}/llm-endpoint-resource-additional-config"
-    
-    # First GET to retrieve existing config
-    get_resp = make_api_request(
-        endpoint,
-        token=jwt_token,
-        method="GET",
-        timeout=30,
+    if dataset_id is None:
+        # Preserve (no-op): return current config for visibility.
+        return get_llm_endpoint_additional_config(jwt_token, resource_instance_id)
+
+    return patch_llm_endpoint_additional_config(
+        jwt_token,
+        resource_instance_id,
+        dataset_id=dataset_id,
     )
-    existing_config = get_resp.json()
-    
-    # Build PATCH payload (preserve other fields, update dataset)
-    patch_data = {
-        "llm_endpoint_resource_config_id": existing_config.get("llm_endpoint_resource_config_id"),
-        "customer_id": config.CUSTOMER_ID,
-        "resource_instance_id": resource_instance_id,
-        "llm_endpoint_pentesting_system_prompt": existing_config.get("llm_endpoint_pentesting_system_prompt", ""),
-        "llm_endpoint_pentesting_reference_capture_replay_dataset_id": dataset_id,
-        "llm_endpoint_resource_system_description": existing_config.get("llm_endpoint_resource_system_description", ""),
-    }
-    
-    resp = make_api_request(
-        endpoint,
-        token=jwt_token,
-        method="PATCH",
-        data=patch_data,
-        timeout=30,
-    )
-    return resp.json()
 
 
 def cleanup_llm_endpoint_dataset(jwt_token: str, resource_instance_id: str) -> dict:
