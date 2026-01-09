@@ -69,10 +69,15 @@ def _make_title(prefix: str, severity: Optional[str], resource_name: str, *, tag
 
 
 def _category_severity_meets_min(sev: str) -> bool:
+    # Allow callers to disable per-category/per-policy issues entirely.
+    if not getattr(config, "CATEGORY_ISSUES_ENABLED", True):
+        return False
     norm = config.normalize_category_severity(sev)
     if not norm:
         return False
-    min_norm = config.CATEGORY_ISSUE_MIN_SEVERITY or "INFORMATIONAL"
+    min_norm = getattr(config, "CATEGORY_ISSUE_MIN_SEVERITY", None)
+    if not min_norm:
+        return False
     return config.CATEGORY_SEVERITY_INDEX[norm] <= config.CATEGORY_SEVERITY_INDEX[min_norm]
 
 
@@ -381,6 +386,9 @@ def create_failed_category_issues_for_results(results: List[dict]) -> int:
     One issue per failed category with the normalized body layout.
     Labels: severity + pentest + pentest-category-failure + unresolved + platform-issue-linked (+ user defaults)
     """
+    if not getattr(config, "CATEGORY_ISSUES_ENABLED", True):
+        print("[github] Per-category/per-policy issues disabled (CATEGORY_ISSUE_MIN_SEVERITY=NONE)")
+        return 0
     if not github_ready():
         print("⚠️  GitHub issue creation skipped: GITHUB_TOKEN or GITHUB_REPOSITORY not set.")
         return 0
@@ -476,6 +484,9 @@ def create_failed_category_issues_for_results(results: List[dict]) -> int:
 # ===== Model-scan policy violations (Model Scan) =====
 
 def create_issues_for_model_scan_violations(results: List[dict]) -> int:
+    if not getattr(config, "CATEGORY_ISSUES_ENABLED", True):
+        print("[github] Per-category/per-policy issues disabled (CATEGORY_ISSUE_MIN_SEVERITY=NONE)")
+        return 0
     if not github_ready():
         print("⚠️  GitHub issue creation skipped: GITHUB_TOKEN or GITHUB_REPOSITORY not set.")
         return 0
@@ -591,6 +602,9 @@ def create_issues_for_model_scan_violations(results: List[dict]) -> int:
 # ===== Model-scan hard failures =====
 
 def create_issues_for_model_scan_failures(failures: List[dict]) -> int:
+    if not getattr(config, "CATEGORY_ISSUES_ENABLED", True):
+        print("[github] Per-category/per-policy issues disabled (CATEGORY_ISSUE_MIN_SEVERITY=NONE)")
+        return 0
     if not failures:
         return 0
     if not github_ready():
