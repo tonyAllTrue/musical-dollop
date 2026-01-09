@@ -197,11 +197,16 @@ def normalize_category_severity(s: str | None) -> str:
     up = s.strip().upper()
     return up if up in CATEGORY_SEVERITY_INDEX else ""
 
-# Minimum category severity to create per-category GitHub issues.
+# Minimum category/policy severity to create per-category/per-policy GitHub issues.
 # Default "INFORMATIONAL" (creates for all severities).
-CATEGORY_ISSUE_MIN_SEVERITY = normalize_category_severity(
-    os.getenv("CATEGORY_ISSUE_MIN_SEVERITY", "INFORMATIONAL")
-)
+# Set to "NONE" to disable per-category/per-policy issues entirely (job-level issues may still be created).
+_CATEGORY_ISSUE_MIN_SEVERITY_RAW = os.getenv("CATEGORY_ISSUE_MIN_SEVERITY", "INFORMATIONAL").strip()
+if _CATEGORY_ISSUE_MIN_SEVERITY_RAW.lower() in ("", "none", "disabled", "disable", "off", "false", "0"):
+    CATEGORY_ISSUES_ENABLED = False
+    CATEGORY_ISSUE_MIN_SEVERITY: str | None = None
+else:
+    CATEGORY_ISSUES_ENABLED = True
+    CATEGORY_ISSUE_MIN_SEVERITY = normalize_category_severity(_CATEGORY_ISSUE_MIN_SEVERITY_RAW)
 
 def print_config_banner() -> None:
     print("=" * 80)
@@ -270,6 +275,7 @@ def print_config_banner() -> None:
     # GitHub integration presence (no secrets printed)
     print(f"GITHUB_REPOSITORY: {GITHUB_REPOSITORY or '(not set)'}")
     print(f"GITHUB_TOKEN set: {'yes' if GITHUB_TOKEN else 'no'}")
+    print(f"CATEGORY_ISSUES_ENABLED: {CATEGORY_ISSUES_ENABLED}")
     print(f"CATEGORY_ISSUE_MIN_SEVERITY: {CATEGORY_ISSUE_MIN_SEVERITY or '(none)'}")
     if GITHUB_DEFAULT_LABELS:
         print(f"GITHUB_DEFAULT_LABELS: {GITHUB_DEFAULT_LABELS}")
