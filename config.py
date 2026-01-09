@@ -69,6 +69,11 @@ HUGGINGFACE_ONBOARDING_WAIT_SECS = float(os.getenv("HUGGINGFACE_ONBOARDING_WAIT_
 # If not specified, uses the first project from PROJECT_IDS
 HUGGINGFACE_ONBOARDING_PROJECT_ID = os.getenv("HUGGINGFACE_ONBOARDING_PROJECT_ID", "")
 
+# Project name to associate onboarded models with (preferred over UUID)
+# If both name and ID are provided, NAME takes precedence.
+# If neither is specified, uses the first project from PROJECT_IDS/PROJECT_NAMES.
+HUGGINGFACE_ONBOARDING_PROJECT_NAME = os.getenv("HUGGINGFACE_ONBOARDING_PROJECT_NAME", "").strip()
+
 # Skip inventory selection and only scan onboarded HuggingFace models
 # When true, no models from inventory will be selected - only onboarded models will be scanned
 HUGGINGFACE_ONBOARDING_ONLY = os.getenv("HUGGINGFACE_ONBOARDING_ONLY", "false").lower() == "true"
@@ -245,6 +250,8 @@ def print_config_banner() -> None:
     if HUGGINGFACE_ONBOARDING_ENABLED:
         print(f"HUGGINGFACE_ONBOARDING_ENABLED: {HUGGINGFACE_ONBOARDING_ENABLED}")
         print(f"HUGGINGFACE_MODELS_TO_ONBOARD: {HUGGINGFACE_MODELS_TO_ONBOARD}")
+        if HUGGINGFACE_ONBOARDING_PROJECT_NAME:
+            print(f"HUGGINGFACE_ONBOARDING_PROJECT_NAME: {HUGGINGFACE_ONBOARDING_PROJECT_NAME}")
         if HUGGINGFACE_ONBOARDING_PROJECT_ID:
             print(f"HUGGINGFACE_ONBOARDING_PROJECT_ID: {HUGGINGFACE_ONBOARDING_PROJECT_ID}")
         print(f"HUGGINGFACE_ONBOARDING_WAIT_SECS: {HUGGINGFACE_ONBOARDING_WAIT_SECS}")
